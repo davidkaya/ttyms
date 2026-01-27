@@ -1,0 +1,23 @@
+[package]
+name = "terms"
+version = "0.1.0"
+edition = "2021"
+description = "A secure terminal client for Microsoft Teams"
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+dirs = "5"
+toml = "0.8"
+open = "5"
+anyhow = "1"
+keyring = "2"
+zeroize = "1"
+sha2 = "0.10"
+base64 = "0.21"
+rand = "0.8"
