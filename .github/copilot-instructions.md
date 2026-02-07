@@ -51,6 +51,10 @@ It uses the Microsoft Graph API for messaging and OAuth2 for authentication.
 - Status messages should be concise and truncated to fit terminal width
 
 ### Git Conventions
-- Write clear, imperative commit messages (e.g., "Add user search autocomplete")
+- **Always use Conventional Commits** (https://www.conventionalcommits.org/)
+  - Format: `<type>(<scope>): <description>`
+  - Types: `feat`, `fix`, `docs`, `test`, `ci`, `refactor`, `chore`, `perf`, `style`
+  - Scopes: `auth`, `ui`, `client`, `models`, `app`, `config`, or omit for broad changes
+  - Examples: `feat(auth): add PKCE browser flow`, `fix(ui): truncate status bar text`
 - Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer
 - Keep commits focused on a single logical change
