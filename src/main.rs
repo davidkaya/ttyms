@@ -380,9 +380,9 @@ fn wait_for_key() {
 }
 
 fn print_help() {
-    println!("Terms - Terminal Microsoft Teams Client");
+    println!("ttyms - Terminal Microsoft Teams Client");
     println!();
-    println!("USAGE: terms [OPTIONS]");
+    println!("USAGE: ttyms [OPTIONS]");
     println!();
     println!("OPTIONS:");
     println!("  --pkce      Use PKCE browser flow instead of device code flow");

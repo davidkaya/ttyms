@@ -19,7 +19,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 fn draw_loading(frame: &mut Frame, message: &str) {
     let area = frame.size();
     let block = Block::default()
-        .title(" Terms ")
+        .title(" ttyms ")
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::Cyan));
     let inner = block.inner(area);
@@ -36,7 +36,7 @@ fn draw_loading(frame: &mut Frame, message: &str) {
 
     let logo = Paragraph::new(vec![
         Line::from(Span::styled(
-            "◆  T E R M S",
+            "◆  T T Y M S",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -59,7 +59,7 @@ fn draw_loading(frame: &mut Frame, message: &str) {
 fn draw_error(frame: &mut Frame, message: &str) {
     let area = frame.size();
     let block = Block::default()
-        .title(" Terms - Error ")
+        .title(" ttyms - Error ")
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::Red));
     let inner = block.inner(area);
@@ -116,7 +116,7 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
-            " ◆ TERMS ",
+            " ◆ TTYMS ",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

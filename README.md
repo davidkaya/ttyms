@@ -1,4 +1,4 @@
-# Terms — Terminal Microsoft Teams Client
+# ttyms — Terminal Microsoft Teams Client
 
 A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust with [ratatui](https://ratatui.rs/).
 
@@ -16,7 +16,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ ◆ TERMS │ Microsoft Teams                        John Doe      │
+│ ◆ TTYMS │ Microsoft Teams                        John Doe      │
 ├───────────────────┬─────────────────────────────────────────────┤
 │ Chats             │ Project Discussion                          │
 │                   │─────────────────────────────────────────────│
@@ -49,7 +49,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 1. Go to [Azure Portal](https://portal.azure.com) → **Microsoft Entra ID** → **App registrations**
 2. Click **New registration**
 3. Set:
-   - **Name**: `Terms` (or any name)
+   - **Name**: `ttyms` (or any name)
    - **Supported account types**: *Accounts in any organizational directory* (for multi-tenant)
    - **Redirect URI**: leave blank
 4. Click **Register**
@@ -64,7 +64,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
    - `ChatMessage.Send`
 7. Copy the **Application (client) ID**
 
-### 2. Configure Terms
+### 2. Configure ttyms
 
 Run the app once to generate the config file:
 
@@ -73,9 +73,9 @@ cargo run
 ```
 
 Edit the config file (location shown in the output):
-- **Windows**: `%APPDATA%\terms\config.toml`
-- **macOS**: `~/Library/Application Support/terms/config.toml`
-- **Linux**: `~/.config/terms/config.toml`
+- **Windows**: `%APPDATA%\ttyms\config.toml`
+- **macOS**: `~/Library/Application Support/ttyms/config.toml`
+- **Linux**: `~/.config/ttyms/config.toml`
 
 Set your `client_id`:
 
@@ -121,9 +121,9 @@ cargo run -- --pkce
 ### CLI Options
 
 ```sh
-terms --help     # Show help
-terms --pkce     # Use PKCE browser flow instead of device code
-terms --logout   # Clear stored credentials securely
+ttyms --help     # Show help
+ttyms --pkce     # Use PKCE browser flow instead of device code
+ttyms --logout   # Clear stored credentials securely
 ```
 
 ## Security

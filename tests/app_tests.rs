@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod panel_navigation {
-    use terms::app::{App, Panel};
+    use ttyms::app::{App, Panel};
 
     #[test]
     fn new_app_starts_on_chat_list() {
@@ -37,8 +37,8 @@ mod panel_navigation {
 
 #[cfg(test)]
 mod chat_selection {
-    use terms::app::App;
-    use terms::models::*;
+    use ttyms::app::App;
+    use ttyms::models::*;
 
     fn make_test_chats(count: usize) -> Vec<Chat> {
         (0..count)
@@ -128,7 +128,7 @@ mod chat_selection {
 
 #[cfg(test)]
 mod input_handling {
-    use terms::app::App;
+    use ttyms::app::App;
 
     #[test]
     fn insert_char_basic() {
@@ -254,7 +254,7 @@ mod input_handling {
 
 #[cfg(test)]
 mod scroll_tests {
-    use terms::app::App;
+    use ttyms::app::App;
 
     #[test]
     fn scroll_up_increases_offset() {
@@ -286,7 +286,7 @@ mod scroll_tests {
 
 #[cfg(test)]
 mod new_chat_mode_tests {
-    use terms::app::{App, UserSuggestion};
+    use ttyms::app::{App, UserSuggestion};
 
     #[test]
     fn enter_and_exit_new_chat_mode() {
@@ -398,7 +398,7 @@ mod new_chat_mode_tests {
 
 #[cfg(test)]
 mod refresh_tests {
-    use terms::app::App;
+    use ttyms::app::App;
 
     #[test]
     fn should_refresh_after_interval() {
@@ -424,7 +424,7 @@ mod refresh_tests {
     #[test]
     fn current_user_id_returns_id() {
         let mut app = App::new();
-        app.current_user = Some(terms::models::User {
+        app.current_user = Some(ttyms::models::User {
             id: "user-42".to_string(),
             display_name: "Test".to_string(),
             mail: None,

@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod token_tests {
-    use terms::auth::TokenResponse;
+    use ttyms::auth::TokenResponse;
 
     fn make_token(expires_in: u64, age_secs: u64) -> TokenResponse {
         let now = std::time::SystemTime::now()
@@ -61,7 +61,7 @@ mod token_tests {
 
 #[cfg(test)]
 mod pkce_tests {
-    use terms::auth::{compute_code_challenge, generate_code_verifier};
+    use ttyms::auth::{compute_code_challenge, generate_code_verifier};
 
     #[test]
     fn verifier_is_base64url_no_padding() {
@@ -100,7 +100,7 @@ mod pkce_tests {
 
 #[cfg(test)]
 mod url_encoding_tests {
-    use terms::auth::{percent_encode, simple_url_decode};
+    use ttyms::auth::{percent_encode, simple_url_decode};
 
     #[test]
     fn encode_plain_text() {
@@ -153,7 +153,7 @@ mod url_encoding_tests {
 
 #[cfg(test)]
 mod callback_parsing_tests {
-    use terms::auth::parse_auth_callback;
+    use ttyms::auth::parse_auth_callback;
 
     #[test]
     fn parse_valid_callback() {

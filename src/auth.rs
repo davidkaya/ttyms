@@ -7,7 +7,7 @@ use zeroize::Zeroize;
 
 use crate::config::Config;
 
-const KEYRING_SERVICE: &str = "terms-teams-client";
+const KEYRING_SERVICE: &str = "ttyms-teams-client";
 const KEYRING_USER: &str = "default";
 const SCOPES: &str = "User.Read User.ReadBasic.All Chat.ReadWrite ChatMessage.Read ChatMessage.Send offline_access";
 

@@ -11,7 +11,7 @@ pub struct Config {
 pub fn config_dir() -> Result<PathBuf> {
     let dir = dirs::config_dir()
         .context("Could not determine config directory")?
-        .join("terms");
+        .join("ttyms");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
@@ -19,7 +19,7 @@ pub fn config_dir() -> Result<PathBuf> {
 pub fn load_config() -> Result<Config> {
     let path = config_dir()?.join("config.toml");
     if !path.exists() {
-        let template = r#"# Terms Configuration
+        let template = r#"# ttyms Configuration
 # Tokens are stored securely in your OS credential manager.
 # This file contains non-sensitive settings only.
 
@@ -47,7 +47,7 @@ pub fn print_setup_guide() {
     eprintln!("Setup Guide:");
     eprintln!("  1. Go to https://portal.azure.com → Microsoft Entra ID → App registrations");
     eprintln!("  2. Click 'New registration'");
-    eprintln!("  3. Name: 'Terms' (or any name you prefer)");
+    eprintln!("  3. Name: 'ttyms' (or any name you prefer)");
     eprintln!("  4. Supported account types: 'Accounts in any organizational directory'");
     eprintln!("  5. Redirect URI: leave blank");
     eprintln!("  6. After creation, go to 'Authentication':");

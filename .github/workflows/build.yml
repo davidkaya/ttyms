@@ -29,19 +29,19 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact: terms-windows-x86_64
+            artifact: ttyms-windows-x86_64
             ext: .exe
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact: terms-macos-x86_64
+            artifact: ttyms-macos-x86_64
             ext: ""
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: terms-macos-aarch64
+            artifact: ttyms-macos-aarch64
             ext: ""
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: terms-linux-x86_64
+            artifact: ttyms-linux-x86_64
             ext: ""
 
     runs-on: ${{ matrix.os }}
@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/terms${{ matrix.ext }} dist/${{ matrix.artifact }}${{ matrix.ext }}
+          cp target/${{ matrix.target }}/release/ttyms${{ matrix.ext }} dist/${{ matrix.artifact }}${{ matrix.ext }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

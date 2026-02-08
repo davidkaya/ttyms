@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 mod strip_html_tests {
-    use terms::models::strip_html;
+    use ttyms::models::strip_html;
 
     #[test]
     fn plain_text_unchanged() {
@@ -73,7 +73,7 @@ mod strip_html_tests {
 
 #[cfg(test)]
 mod chat_tests {
-    use terms::models::*;
+    use ttyms::models::*;
 
     fn make_chat(
         topic: Option<&str>,
@@ -147,7 +147,7 @@ mod chat_tests {
 
 #[cfg(test)]
 mod message_tests {
-    use terms::models::*;
+    use ttyms::models::*;
 
     fn make_message(
         sender_name: Option<&str>,
@@ -260,7 +260,7 @@ mod message_tests {
 
 #[cfg(test)]
 mod deserialization_tests {
-    use terms::models::*;
+    use ttyms::models::*;
 
     #[test]
     fn deserialize_user() {

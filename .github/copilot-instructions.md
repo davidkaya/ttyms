@@ -1,7 +1,7 @@
-# Copilot Instructions for Terms
+# Copilot Instructions for ttyms
 
 ## Project Overview
-Terms is a terminal-based Microsoft Teams client written in Rust using ratatui for the TUI.
+ttyms is a terminal-based Microsoft Teams client written in Rust using ratatui for the TUI.
 It uses the Microsoft Graph API for messaging and OAuth2 for authentication.
 
 ## Code Quality Rules
