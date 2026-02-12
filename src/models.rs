@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GraphResponse<T> {
@@ -26,6 +27,8 @@ pub struct Chat {
     pub members: Option<Vec<ChatMember>>,
     #[serde(rename = "lastMessagePreview")]
     pub last_message_preview: Option<MessagePreview>,
+    #[serde(rename = "unreadMessageCount", default)]
+    pub unread_message_count: Option<i32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -51,11 +54,16 @@ pub struct Message {
     pub from: Option<MessageFrom>,
     #[serde(rename = "createdDateTime")]
     pub created_date_time: Option<String>,
+    #[serde(default)]
+    pub reactions: Option<Vec<ChatMessageReaction>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct MessageBody {
     pub content: Option<String>,
+    #[serde(rename = "contentType", default)]
+    pub content_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -68,6 +76,61 @@ pub struct MessageUser {
     #[serde(rename = "displayName")]
     pub display_name: Option<String>,
     pub id: Option<String>,
+}
+
+// Reaction types
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ChatMessageReaction {
+    #[serde(rename = "reactionType")]
+    pub reaction_type: String,
+    pub user: Option<ReactionIdentitySet>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ReactionIdentitySet {
+    pub user: Option<MessageUser>,
+}
+
+// Teams & Channels
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct Team {
+    pub id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct Channel {
+    pub id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    pub description: Option<String>,
+    #[serde(rename = "membershipType", default)]
+    pub membership_type: Option<String>,
+}
+
+// Presence
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct Presence {
+    pub availability: Option<String>,
+    pub activity: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PresenceResponse {
+    pub value: Vec<UserPresence>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserPresence {
+    pub id: String,
+    pub availability: Option<String>,
 }
 
 impl Chat {
@@ -97,6 +160,10 @@ impl Chat {
             .and_then(|b| b.content.as_ref())
             .map(|c| strip_html(c))
             .unwrap_or_default()
+    }
+
+    pub fn unread_count(&self) -> i32 {
+        self.unread_message_count.unwrap_or(0)
     }
 }
 
@@ -135,6 +202,22 @@ impl Message {
     pub fn is_user_message(&self) -> bool {
         self.message_type.as_deref() == Some("message")
     }
+
+    /// Returns a summary of reactions as (emoji, count) pairs
+    pub fn reactions_summary(&self) -> Vec<(String, usize)> {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        if let Some(ref reactions) = self.reactions {
+            for r in reactions {
+                *counts.entry(r.reaction_type.clone()).or_insert(0) += 1;
+            }
+        }
+        let mut result: Vec<_> = counts
+            .into_iter()
+            .map(|(rtype, count)| (reaction_emoji(&rtype), count))
+            .collect();
+        result.sort_by(|a, b| b.1.cmp(&a.1));
+        result
+    }
 }
 
 pub fn strip_html(input: &str) -> String {
@@ -157,4 +240,198 @@ pub fn strip_html(input: &str) -> String {
         .replace("&#39;", "'")
         .trim()
         .to_string()
+}
+
+pub fn reaction_emoji(reaction_type: &str) -> String {
+    match reaction_type {
+        "like" => "👍".to_string(),
+        "heart" => "❤️".to_string(),
+        "laugh" => "😂".to_string(),
+        "surprised" => "😮".to_string(),
+        "sad" => "😢".to_string(),
+        "angry" => "😡".to_string(),
+        other => other.to_string(),
+    }
+}
+
+pub fn presence_indicator(availability: &str) -> (&str, &str) {
+    match availability {
+        "Available" => ("🟢", "Available"),
+        "Busy" => ("🔴", "Busy"),
+        "DoNotDisturb" => ("⛔", "Do Not Disturb"),
+        "Away" => ("🟡", "Away"),
+        "BeRightBack" => ("🟡", "Be Right Back"),
+        "Offline" => ("⚫", "Offline"),
+        "PresenceUnknown" => ("⚪", "Unknown"),
+        _ => ("⚪", "Unknown"),
+    }
+}
+
+/// Available reaction types for the reaction picker
+pub const REACTION_TYPES: &[(&str, &str)] = &[
+    ("like", "👍"),
+    ("heart", "❤️"),
+    ("laugh", "😂"),
+    ("surprised", "😮"),
+    ("sad", "😢"),
+    ("angry", "😡"),
+];
+
+/// Available presence statuses
+pub const PRESENCE_STATUSES: &[(&str, &str)] = &[
+    ("Available", "🟢 Available"),
+    ("Busy", "🔴 Busy"),
+    ("DoNotDisturb", "⛔ Do Not Disturb"),
+    ("Away", "🟡 Away"),
+    ("BeRightBack", "🟡 Be Right Back"),
+    ("Offline", "⚫ Appear Offline"),
+];
+
+/// Rich text segment for terminal rendering
+#[derive(Debug, Clone, PartialEq)]
+pub enum RichSegment {
+    Plain(String),
+    Bold(String),
+    Italic(String),
+    Code(String),
+    Link { text: String, url: String },
+    Newline,
+}
+
+/// Parse HTML into rich text segments for terminal display
+pub fn parse_rich_text(html: &str) -> Vec<RichSegment> {
+    let mut segments: Vec<RichSegment> = Vec::new();
+    let mut chars = html.chars().peekable();
+    let mut current = String::new();
+
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            // Collect tag
+            let mut tag = String::new();
+            while let Some(&tc) = chars.peek() {
+                chars.next();
+                if tc == '>' {
+                    break;
+                }
+                tag.push(tc);
+            }
+            let tag_lower = tag.to_lowercase();
+
+            if tag_lower == "br" || tag_lower == "br/" || tag_lower == "br /" {
+                if !current.is_empty() {
+                    segments.push(RichSegment::Plain(decode_entities(&current)));
+                    current.clear();
+                }
+                segments.push(RichSegment::Newline);
+            } else if tag_lower == "b" || tag_lower == "strong" {
+                if !current.is_empty() {
+                    segments.push(RichSegment::Plain(decode_entities(&current)));
+                    current.clear();
+                }
+                let inner = collect_until_close(&mut chars, &tag_lower);
+                if !inner.is_empty() {
+                    segments.push(RichSegment::Bold(decode_entities(&strip_html(&inner))));
+                }
+            } else if tag_lower == "i" || tag_lower == "em" {
+                if !current.is_empty() {
+                    segments.push(RichSegment::Plain(decode_entities(&current)));
+                    current.clear();
+                }
+                let inner = collect_until_close(&mut chars, &tag_lower);
+                if !inner.is_empty() {
+                    segments.push(RichSegment::Italic(decode_entities(&strip_html(&inner))));
+                }
+            } else if tag_lower == "code" || tag_lower == "pre" {
+                if !current.is_empty() {
+                    segments.push(RichSegment::Plain(decode_entities(&current)));
+                    current.clear();
+                }
+                let inner = collect_until_close(&mut chars, &tag_lower);
+                if !inner.is_empty() {
+                    segments.push(RichSegment::Code(decode_entities(&strip_html(&inner))));
+                }
+            } else if tag_lower.starts_with("a ") {
+                if !current.is_empty() {
+                    segments.push(RichSegment::Plain(decode_entities(&current)));
+                    current.clear();
+                }
+                let url = extract_href(&tag);
+                let inner = collect_until_close(&mut chars, "a");
+                let text = decode_entities(&strip_html(&inner));
+                if !text.is_empty() {
+                    segments.push(RichSegment::Link { text, url });
+                }
+            }
+            // Skip closing tags and other tags
+        } else {
+            current.push(ch);
+        }
+    }
+
+    if !current.is_empty() {
+        segments.push(RichSegment::Plain(decode_entities(&current)));
+    }
+
+    // If we only got plain segments, simplify
+    if segments.is_empty() {
+        segments.push(RichSegment::Plain(String::new()));
+    }
+
+    segments
+}
+
+fn collect_until_close(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    tag_name: &str,
+) -> String {
+    let mut result = String::new();
+    let close = format!("/{}", tag_name);
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            let mut inner_tag = String::new();
+            while let Some(&tc) = chars.peek() {
+                chars.next();
+                if tc == '>' {
+                    break;
+                }
+                inner_tag.push(tc);
+            }
+            if inner_tag.to_lowercase() == close {
+                break;
+            }
+            // Preserve inner tags for nested handling
+            result.push('<');
+            result.push_str(&inner_tag);
+            result.push('>');
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+fn extract_href(tag: &str) -> String {
+    if let Some(pos) = tag.find("href=\"") {
+        let start = pos + 6;
+        if let Some(end) = tag[start..].find('"') {
+            return tag[start..start + end].to_string();
+        }
+    }
+    if let Some(pos) = tag.find("href='") {
+        let start = pos + 6;
+        if let Some(end) = tag[start..].find('\'') {
+            return tag[start..start + end].to_string();
+        }
+    }
+    String::new()
+}
+
+fn decode_entities(input: &str) -> String {
+    input
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&nbsp;", " ")
+        .replace("&#39;", "'")
 }

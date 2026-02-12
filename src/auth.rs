@@ -9,7 +9,7 @@ use crate::config::Config;
 
 const KEYRING_SERVICE: &str = "ttyms-teams-client";
 const KEYRING_USER: &str = "default";
-const SCOPES: &str = "User.Read User.ReadBasic.All Chat.ReadWrite ChatMessage.Read ChatMessage.Send offline_access";
+const SCOPES: &str = "User.Read User.ReadBasic.All Chat.ReadWrite ChatMessage.Read ChatMessage.Send Presence.Read Presence.ReadWrite Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Read.All ChannelMessage.Send offline_access";
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]

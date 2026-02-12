@@ -54,6 +54,16 @@ pub fn print_setup_guide() {
     eprintln!("     - Enable 'Allow public client flows' → Save");
     eprintln!("     - Add platform → 'Mobile and desktop applications' → add: http://localhost");
     eprintln!("  7. Go to 'API permissions' → Add permissions:");
-    eprintln!("     - Microsoft Graph → Delegated: User.Read, Chat.Read, ChatMessage.Read, ChatMessage.Send");
+    eprintln!("     - Microsoft Graph → Delegated:");
+    eprintln!("       User.Read, User.ReadBasic.All, Chat.ReadWrite,");
+    eprintln!("       ChatMessage.Read, ChatMessage.Send,");
+    eprintln!("       Presence.Read, Presence.ReadWrite,");
+    eprintln!("       Team.ReadBasic.All, Channel.ReadBasic.All,");
+    eprintln!("       ChannelMessage.Read.All, ChannelMessage.Send");
     eprintln!("  8. Copy the 'Application (client) ID' to your config file");
+}
+
+/// Stable session ID for presence API
+pub fn app_session_id() -> String {
+    "ttyms-terminal-client".to_string()
 }
