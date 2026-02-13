@@ -6,7 +6,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, AppScreen, Panel};
+use crate::app::{App, AppScreen, DialogMode, Panel, TeamsPanel, ViewMode};
+use crate::models::{self, RichSegment};
 
 pub fn draw(frame: &mut Frame, app: &App) {
     match &app.screen {
@@ -92,18 +93,27 @@ fn draw_main(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
+            Constraint::Length(3),  // Header with tabs
             Constraint::Min(10),   // Body
             Constraint::Length(1), // Status bar
         ])
         .split(area);
 
     draw_header(frame, app, chunks[0]);
-    draw_body(frame, app, chunks[1]);
+
+    match app.view_mode {
+        ViewMode::Chats => draw_chats_body(frame, app, chunks[1]),
+        ViewMode::Teams => draw_teams_body(frame, app, chunks[1]),
+    }
+
     draw_status_bar(frame, app, chunks[2]);
 
-    if app.new_chat_mode {
-        draw_new_chat_dialog(frame, app);
+    // Draw dialogs on top
+    match app.dialog {
+        DialogMode::NewChat => draw_new_chat_dialog(frame, app),
+        DialogMode::ReactionPicker => draw_reaction_picker(frame, app),
+        DialogMode::PresencePicker => draw_presence_picker(frame, app),
+        DialogMode::None => {}
     }
 }
 
@@ -114,6 +124,30 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
         .map(|u| u.display_name.as_str())
         .unwrap_or("Unknown");
 
+    let (presence_icon, _) = models::presence_indicator(&app.my_presence);
+
+    let chats_tab_style = if app.view_mode == ViewMode::Chats {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+
+    let teams_tab_style = if app.view_mode == ViewMode::Teams {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+
+    let unread_text = if app.total_unread > 0 {
+        format!(" ({})", app.total_unread)
+    } else {
+        String::new()
+    };
+
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             " ◆ TTYMS ",
@@ -122,10 +156,15 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Microsoft Teams", Style::default().fg(Color::Gray)),
-        Span::raw("  "),
+        Span::styled("1:", Style::default().fg(Color::DarkGray)),
+        Span::styled("Chats", chats_tab_style),
+        Span::styled(&unread_text, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled("  ", Style::default()),
+        Span::styled("2:", Style::default().fg(Color::DarkGray)),
+        Span::styled("Teams", teams_tab_style),
+        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("  {} ", user_name),
+            format!("{} {} ", presence_icon, user_name),
             Style::default().fg(Color::Green),
         ),
     ]))
@@ -137,7 +176,9 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(header, area);
 }
 
-fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
+// ---- Chats View ----
+
+fn draw_chats_body(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
@@ -148,7 +189,7 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_chat_list(frame: &mut Frame, app: &App, area: Rect) {
-    let is_active = app.active_panel == Panel::ChatList;
+    let is_active = app.active_panel == Panel::ChatList && app.view_mode == ViewMode::Chats;
     let border_color = if is_active { Color::Cyan } else { Color::DarkGray };
 
     let block = Block::default()
@@ -182,9 +223,16 @@ fn draw_chat_list(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             let is_selected = i == app.selected_chat;
+            let unread = chat.unread_count();
+            let has_unread = unread > 0;
+
             let name_style = if is_selected {
                 Style::default()
                     .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else if has_unread {
+                Style::default()
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
@@ -192,11 +240,39 @@ fn draw_chat_list(frame: &mut Frame, app: &App, area: Rect) {
 
             let indicator = if is_selected { "▸ " } else { "  " };
 
+            // Build name line with optional unread badge
+            let mut name_spans = vec![
+                Span::styled(indicator, name_style),
+                Span::styled(name, name_style),
+            ];
+            if has_unread {
+                name_spans.push(Span::styled(
+                    format!(" ({})", unread),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ));
+            }
+
+            // Show presence indicator for 1:1 chats
+            if chat.chat_type == "oneOnOne" {
+                if let Some(ref members) = chat.members {
+                    for m in members {
+                        if m.user_id.as_deref() != Some(app.current_user_id()) {
+                            if let Some(ref uid) = m.user_id {
+                                if let Some(avail) = app.presence_map.get(uid) {
+                                    let (icon, _) = models::presence_indicator(avail);
+                                    name_spans.insert(1, Span::styled(
+                                        format!("{} ", icon),
+                                        Style::default(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             ListItem::new(Text::from(vec![
-                Line::from(vec![
-                    Span::styled(indicator, name_style),
-                    Span::styled(name, name_style),
-                ]),
+                Line::from(name_spans),
                 Line::from(vec![
                     Span::raw("    "),
                     Span::styled(preview, Style::default().fg(Color::DarkGray)),
@@ -216,24 +292,33 @@ fn draw_message_area(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Min(5), Constraint::Length(3)])
         .split(area);
 
-    draw_messages(frame, app, chunks[0]);
-    draw_input(frame, app, chunks[1]);
+    draw_messages(frame, app, &app.messages, app.scroll_offset, app.selected_message,
+                  &app.selected_chat_name(), app.active_panel == Panel::Messages, chunks[0]);
+    draw_input_box(frame, &app.input, app.input_cursor,
+                   app.active_panel == Panel::Input, " Message ", chunks[1]);
 }
 
-fn draw_messages(frame: &mut Frame, app: &App, area: Rect) {
-    let is_active = app.active_panel == Panel::Messages;
+fn draw_messages(
+    frame: &mut Frame,
+    app: &App,
+    messages: &[models::Message],
+    scroll_offset: usize,
+    selected_message: Option<usize>,
+    title: &str,
+    is_active: bool,
+    area: Rect,
+) {
     let border_color = if is_active { Color::Cyan } else { Color::DarkGray };
 
-    let chat_name = app.selected_chat_name();
     let block = Block::default()
-        .title(format!(" {} ", chat_name))
+        .title(format!(" {} ", title))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if app.messages.is_empty() {
+    if messages.is_empty() {
         let empty = Paragraph::new("No messages yet")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
@@ -244,7 +329,7 @@ fn draw_messages(frame: &mut Frame, app: &App, area: Rect) {
     let current_user_id = app.current_user_id();
     let mut lines: Vec<Line> = Vec::new();
 
-    for msg in &app.messages {
+    for (idx, msg) in messages.iter().enumerate() {
         if !msg.is_user_message() {
             continue;
         }
@@ -252,9 +337,13 @@ fn draw_messages(frame: &mut Frame, app: &App, area: Rect) {
         let is_me = msg.sender_id() == Some(current_user_id);
         let sender = msg.sender_name();
         let time = msg.formatted_time();
-        let content = msg.content_text();
+        let is_selected = selected_message == Some(idx);
 
-        let sender_style = if is_me {
+        let sender_style = if is_selected {
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+        } else if is_me {
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD)
@@ -264,19 +353,97 @@ fn draw_messages(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD)
         };
 
-        lines.push(Line::from(vec![
+        // Sender line with presence
+        let mut sender_spans = vec![
             Span::styled(sender, sender_style),
             Span::styled(
                 format!("  {}", time),
                 Style::default().fg(Color::DarkGray),
             ),
-        ]));
+        ];
 
-        for text_line in content.lines() {
-            lines.push(Line::from(Span::styled(
-                format!("  {}", text_line),
-                Style::default().fg(Color::White),
-            )));
+        if is_selected {
+            sender_spans.push(Span::styled(
+                " ◀",
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
+        lines.push(Line::from(sender_spans));
+
+        // Message content with rich text
+        let content_html = msg
+            .body
+            .as_ref()
+            .and_then(|b| b.content.as_ref())
+            .map(|s| s.as_str())
+            .unwrap_or("");
+
+        let rich_segments = models::parse_rich_text(content_html);
+        let mut content_spans: Vec<Span> = Vec::new();
+        content_spans.push(Span::raw("  "));
+
+        for seg in &rich_segments {
+            match seg {
+                RichSegment::Plain(text) => {
+                    content_spans.push(Span::styled(text.clone(), Style::default().fg(Color::White)));
+                }
+                RichSegment::Bold(text) => {
+                    content_spans.push(Span::styled(
+                        text.clone(),
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    ));
+                }
+                RichSegment::Italic(text) => {
+                    content_spans.push(Span::styled(
+                        text.clone(),
+                        Style::default().fg(Color::White).add_modifier(Modifier::ITALIC),
+                    ));
+                }
+                RichSegment::Code(text) => {
+                    content_spans.push(Span::styled(
+                        format!("`{}`", text),
+                        Style::default().fg(Color::Cyan).bg(Color::DarkGray),
+                    ));
+                }
+                RichSegment::Link { text, url } => {
+                    content_spans.push(Span::styled(
+                        text.clone(),
+                        Style::default()
+                            .fg(Color::Blue)
+                            .add_modifier(Modifier::UNDERLINED),
+                    ));
+                    if url != text && !url.is_empty() {
+                        content_spans.push(Span::styled(
+                            format!(" ({})", url),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    }
+                }
+                RichSegment::Newline => {
+                    lines.push(Line::from(content_spans.clone()));
+                    content_spans.clear();
+                    content_spans.push(Span::raw("  "));
+                }
+            }
+        }
+
+        if !content_spans.is_empty() {
+            lines.push(Line::from(content_spans));
+        }
+
+        // Reactions
+        let reactions = msg.reactions_summary();
+        if !reactions.is_empty() {
+            let mut reaction_spans: Vec<Span> = vec![Span::raw("  ")];
+            for (emoji, count) in &reactions {
+                reaction_spans.push(Span::styled(
+                    format!(" {} {} ", emoji, count),
+                    Style::default().fg(Color::Yellow).bg(Color::DarkGray),
+                ));
+                reaction_spans.push(Span::raw(" "));
+            }
+            lines.push(Line::from(reaction_spans));
         }
 
         lines.push(Line::from(""));
@@ -285,49 +452,187 @@ fn draw_messages(frame: &mut Frame, app: &App, area: Rect) {
     let visible_height = inner.height as usize;
     let total_lines = lines.len();
     let max_scroll = total_lines.saturating_sub(visible_height);
-    let scroll = max_scroll.saturating_sub(app.scroll_offset.min(max_scroll));
+    let scroll = max_scroll.saturating_sub(scroll_offset.min(max_scroll));
 
     let paragraph = Paragraph::new(Text::from(lines)).scroll((scroll as u16, 0));
     frame.render_widget(paragraph, inner);
 }
 
-fn draw_input(frame: &mut Frame, app: &App, area: Rect) {
-    let is_active = app.active_panel == Panel::Input;
+fn draw_input_box(
+    frame: &mut Frame,
+    input: &str,
+    cursor: usize,
+    is_active: bool,
+    title: &str,
+    area: Rect,
+) {
     let border_color = if is_active { Color::Cyan } else { Color::DarkGray };
 
-    let display_text = if app.input.is_empty() {
+    let display_text = if input.is_empty() {
         if is_active {
             "Type a message…"
         } else {
             "Press Tab → Enter to type"
         }
     } else {
-        &app.input
+        input
     };
 
-    let style = if app.input.is_empty() {
+    let style = if input.is_empty() {
         Style::default().fg(Color::DarkGray)
     } else {
         Style::default().fg(Color::White)
     };
 
-    let input = Paragraph::new(display_text).style(style).block(
+    let widget = Paragraph::new(display_text).style(style).block(
         Block::default()
-            .title(" Message ")
+            .title(title)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border_color)),
     );
-    frame.render_widget(input, area);
+    frame.render_widget(widget, area);
 
     if is_active {
-        let cursor_pos = app.input[..app.input_cursor].chars().count() as u16;
+        let cursor_pos = input[..cursor.min(input.len())].chars().count() as u16;
         frame.set_cursor(area.x + 1 + cursor_pos, area.y + 1);
     }
 }
 
+// ---- Teams View ----
+
+fn draw_teams_body(frame: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .split(area);
+
+    draw_teams_sidebar(frame, app, chunks[0]);
+    draw_channel_message_area(frame, app, chunks[1]);
+}
+
+fn draw_teams_sidebar(frame: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(area);
+
+    draw_team_list(frame, app, chunks[0]);
+    draw_channel_list(frame, app, chunks[1]);
+}
+
+fn draw_team_list(frame: &mut Frame, app: &App, area: Rect) {
+    let is_active = app.teams_panel == TeamsPanel::TeamList && app.view_mode == ViewMode::Teams;
+    let border_color = if is_active { Color::Cyan } else { Color::DarkGray };
+
+    let block = Block::default()
+        .title(" Teams ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    if app.teams.is_empty() {
+        let empty = Paragraph::new("No teams found")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block);
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .teams
+        .iter()
+        .enumerate()
+        .map(|(i, team)| {
+            let is_selected = i == app.selected_team;
+            let style = if is_selected {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let indicator = if is_selected { "▸ " } else { "  " };
+            ListItem::new(Line::from(vec![
+                Span::styled(indicator, style),
+                Span::styled(&team.display_name, style),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items).block(block);
+    frame.render_widget(list, area);
+}
+
+fn draw_channel_list(frame: &mut Frame, app: &App, area: Rect) {
+    let is_active = app.teams_panel == TeamsPanel::ChannelList && app.view_mode == ViewMode::Teams;
+    let border_color = if is_active { Color::Cyan } else { Color::DarkGray };
+
+    let title = format!(" {} — Channels ", app.selected_team_name());
+    let title_short: String = title.chars().take((area.width as usize).saturating_sub(2)).collect();
+
+    let block = Block::default()
+        .title(title_short)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    if app.channels.is_empty() {
+        let empty = Paragraph::new("Select a team above")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block);
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .channels
+        .iter()
+        .enumerate()
+        .map(|(i, channel)| {
+            let is_selected = i == app.selected_channel;
+            let style = if is_selected {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let indicator = if is_selected { "▸ " } else { "  " };
+            let prefix = match channel.membership_type.as_deref() {
+                Some("private") => "🔒 ",
+                _ => "# ",
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(indicator, style),
+                Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+                Span::styled(&channel.display_name, style),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items).block(block);
+    frame.render_widget(list, area);
+}
+
+fn draw_channel_message_area(frame: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(5), Constraint::Length(3)])
+        .split(area);
+
+    let title = app.selected_channel_name();
+    draw_messages(
+        frame, app, &app.channel_messages, app.channel_scroll_offset, None,
+        &title, app.teams_panel == TeamsPanel::ChannelMessages, chunks[0],
+    );
+    draw_input_box(
+        frame, &app.channel_input, app.channel_input_cursor,
+        app.teams_panel == TeamsPanel::ChannelInput, " Channel Message ", chunks[1],
+    );
+}
+
+// ---- Status Bar ----
+
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    // Truncate status message to fit available width
-    let max_status_len = (area.width as usize).saturating_sub(55);
+    let max_status_len = (area.width as usize).saturating_sub(70);
     let status_msg: String = app
         .status_message
         .chars()
@@ -336,12 +641,19 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     let bar = Paragraph::new(Line::from(vec![
         Span::styled(
-            " Tab",
+            " 1/2",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" Switch │ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" View │ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "Tab",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" Panel │ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             "n",
             Style::default()
@@ -350,19 +662,19 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ),
         Span::styled(" New │ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            "r",
+            "e",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" Refresh │ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" React │ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            "↑↓",
+            "p",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" Nav │ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" Status │ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             "q",
             Style::default()
@@ -378,6 +690,8 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     .style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_widget(bar, area);
 }
+
+// ---- Dialogs ----
 
 fn draw_new_chat_dialog(frame: &mut Frame, app: &App) {
     let area = frame.size();
@@ -455,6 +769,101 @@ fn draw_new_chat_dialog(frame: &mut Frame, app: &App) {
 
     let cursor_pos = app.new_chat_input[..app.new_chat_cursor].chars().count() as u16;
     frame.set_cursor(inner.x + 2 + cursor_pos, inner.y + 1);
+}
+
+fn draw_reaction_picker(frame: &mut Frame, app: &App) {
+    let area = frame.size();
+    let popup = centered_rect(40, 5, area);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" React ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let mut spans: Vec<Span> = vec![Span::raw(" ")];
+    for (i, (_, emoji)) in models::REACTION_TYPES.iter().enumerate() {
+        let style = if i == app.selected_reaction {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        spans.push(Span::styled(format!(" {} ", emoji), style));
+        spans.push(Span::raw(" "));
+    }
+
+    let mut lines = vec![
+        Line::from(spans),
+        Line::from(""),
+        Line::from(Span::styled(
+            "←→: select  │  Enter: react  │  Esc: cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    // Show which message is selected
+    if let Some(idx) = app.selected_message {
+        if let Some(msg) = app.messages.get(idx) {
+            let preview: String = msg.content_text().chars().take(30).collect();
+            lines.insert(0, Line::from(Span::styled(
+                format!("On: {}…", preview),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+}
+
+fn draw_presence_picker(frame: &mut Frame, app: &App) {
+    let area = frame.size();
+    let height = models::PRESENCE_STATUSES.len() as u16 + 5;
+    let popup = centered_rect(40, height, area);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" Set Status ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let (current_icon, current_text) = models::presence_indicator(&app.my_presence);
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!("Current: {} {}", current_icon, current_text),
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(""),
+    ];
+
+    for (i, (_, label)) in models::PRESENCE_STATUSES.iter().enumerate() {
+        let is_selected = i == app.selected_presence;
+        let indicator = if is_selected { "▸ " } else { "  " };
+        let style = if is_selected {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(indicator, style),
+            Span::styled(*label, style),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "↑↓: select  │  Enter: set  │  Esc: cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
 }
 
 fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {

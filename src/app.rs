@@ -1,4 +1,6 @@
-use crate::models::{Chat, Message, User};
+use std::collections::{HashMap, HashSet};
+
+use crate::models::{Channel, Chat, Message, Team, User};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -15,6 +17,20 @@ pub enum Panel {
     Input,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ViewMode {
+    Chats,
+    Teams,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TeamsPanel {
+    TeamList,
+    ChannelList,
+    ChannelMessages,
+    ChannelInput,
+}
+
 #[derive(Debug, Clone)]
 pub enum AppScreen {
     Loading { message: String },
@@ -22,25 +38,71 @@ pub enum AppScreen {
     Error { message: String },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DialogMode {
+    None,
+    NewChat,
+    ReactionPicker,
+    PresencePicker,
+}
+
 pub struct App {
     pub screen: AppScreen,
     pub active_panel: Panel,
+    pub view_mode: ViewMode,
+
+    // Chats
     pub chats: Vec<Chat>,
     pub selected_chat: usize,
     pub messages: Vec<Message>,
     pub input: String,
     pub input_cursor: usize,
+
+    // User
     pub current_user: Option<User>,
     pub status_message: String,
+
+    // Scrolling
     pub scroll_offset: usize,
+
+    // Refresh
     pub last_refresh: std::time::Instant,
     pub refresh_interval: std::time::Duration,
+
+    // New chat dialog
     pub new_chat_mode: bool,
     pub new_chat_input: String,
     pub new_chat_cursor: usize,
     pub suggestions: Vec<UserSuggestion>,
     pub selected_suggestion: usize,
     pub last_search_query: String,
+
+    // Dialog mode
+    pub dialog: DialogMode,
+
+    // Message selection (for reactions)
+    pub selected_message: Option<usize>,
+    pub selected_reaction: usize,
+
+    // Presence
+    pub my_presence: String,
+    pub presence_map: HashMap<String, String>,
+    pub selected_presence: usize,
+
+    // Teams & Channels
+    pub teams: Vec<Team>,
+    pub selected_team: usize,
+    pub channels: Vec<Channel>,
+    pub selected_channel: usize,
+    pub channel_messages: Vec<Message>,
+    pub channel_input: String,
+    pub channel_input_cursor: usize,
+    pub channel_scroll_offset: usize,
+    pub teams_panel: TeamsPanel,
+
+    // Unread tracking
+    pub total_unread: i32,
+    pub known_message_ids: HashSet<String>,
 }
 
 impl App {
@@ -50,6 +112,7 @@ impl App {
                 message: "Starting...".to_string(),
             },
             active_panel: Panel::ChatList,
+            view_mode: ViewMode::Chats,
             chats: Vec::new(),
             selected_chat: 0,
             messages: Vec::new(),
@@ -66,6 +129,23 @@ impl App {
             suggestions: Vec::new(),
             selected_suggestion: 0,
             last_search_query: String::new(),
+            dialog: DialogMode::None,
+            selected_message: None,
+            selected_reaction: 0,
+            my_presence: "PresenceUnknown".to_string(),
+            presence_map: HashMap::new(),
+            selected_presence: 0,
+            teams: Vec::new(),
+            selected_team: 0,
+            channels: Vec::new(),
+            selected_channel: 0,
+            channel_messages: Vec::new(),
+            channel_input: String::new(),
+            channel_input_cursor: 0,
+            channel_scroll_offset: 0,
+            teams_panel: TeamsPanel::TeamList,
+            total_unread: 0,
+            known_message_ids: HashSet::new(),
         }
     }
 
@@ -175,14 +255,18 @@ impl App {
         self.last_refresh = std::time::Instant::now();
     }
 
+    // ---- New chat mode ----
+
     pub fn enter_new_chat_mode(&mut self) {
         self.new_chat_mode = true;
+        self.dialog = DialogMode::NewChat;
         self.new_chat_input.clear();
         self.new_chat_cursor = 0;
     }
 
     pub fn exit_new_chat_mode(&mut self) {
         self.new_chat_mode = false;
+        self.dialog = DialogMode::None;
         self.new_chat_input.clear();
         self.new_chat_cursor = 0;
         self.suggestions.clear();
@@ -237,5 +321,239 @@ impl App {
     /// Returns true if search should be triggered (input changed and >= 2 chars)
     pub fn should_search(&self) -> bool {
         self.new_chat_input.len() >= 2 && self.new_chat_input != self.last_search_query
+    }
+
+    // ---- Message selection (for reactions) ----
+
+    pub fn select_message_up(&mut self) {
+        let user_msgs: Vec<usize> = self
+            .messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.is_user_message())
+            .map(|(i, _)| i)
+            .collect();
+
+        if user_msgs.is_empty() {
+            return;
+        }
+
+        match self.selected_message {
+            None => {
+                self.selected_message = user_msgs.last().copied();
+            }
+            Some(cur) => {
+                if let Some(pos) = user_msgs.iter().position(|&i| i == cur) {
+                    if pos > 0 {
+                        self.selected_message = Some(user_msgs[pos - 1]);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn select_message_down(&mut self) {
+        let user_msgs: Vec<usize> = self
+            .messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.is_user_message())
+            .map(|(i, _)| i)
+            .collect();
+
+        if user_msgs.is_empty() {
+            return;
+        }
+
+        match self.selected_message {
+            None => return,
+            Some(cur) => {
+                if let Some(pos) = user_msgs.iter().position(|&i| i == cur) {
+                    if pos + 1 < user_msgs.len() {
+                        self.selected_message = Some(user_msgs[pos + 1]);
+                    } else {
+                        self.selected_message = None;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn selected_message_id(&self) -> Option<&str> {
+        self.selected_message
+            .and_then(|idx| self.messages.get(idx))
+            .map(|m| m.id.as_str())
+    }
+
+    // ---- Reaction picker ----
+
+    pub fn open_reaction_picker(&mut self) {
+        if self.selected_message.is_some() {
+            self.dialog = DialogMode::ReactionPicker;
+            self.selected_reaction = 0;
+        }
+    }
+
+    pub fn close_dialog(&mut self) {
+        self.dialog = DialogMode::None;
+    }
+
+    // ---- Presence picker ----
+
+    pub fn open_presence_picker(&mut self) {
+        self.dialog = DialogMode::PresencePicker;
+        self.selected_presence = 0;
+    }
+
+    // ---- Teams navigation ----
+
+    pub fn switch_to_chats(&mut self) {
+        self.view_mode = ViewMode::Chats;
+    }
+
+    pub fn switch_to_teams(&mut self) {
+        self.view_mode = ViewMode::Teams;
+    }
+
+    pub fn select_next_team(&mut self) {
+        if !self.teams.is_empty() {
+            self.selected_team = (self.selected_team + 1).min(self.teams.len() - 1);
+        }
+    }
+
+    pub fn select_prev_team(&mut self) {
+        self.selected_team = self.selected_team.saturating_sub(1);
+    }
+
+    pub fn selected_team_id(&self) -> Option<&str> {
+        self.teams.get(self.selected_team).map(|t| t.id.as_str())
+    }
+
+    pub fn selected_team_name(&self) -> String {
+        self.teams
+            .get(self.selected_team)
+            .map(|t| t.display_name.clone())
+            .unwrap_or_else(|| "No team selected".to_string())
+    }
+
+    pub fn select_next_channel(&mut self) {
+        if !self.channels.is_empty() {
+            self.selected_channel = (self.selected_channel + 1).min(self.channels.len() - 1);
+        }
+    }
+
+    pub fn select_prev_channel(&mut self) {
+        self.selected_channel = self.selected_channel.saturating_sub(1);
+    }
+
+    pub fn selected_channel_id(&self) -> Option<&str> {
+        self.channels
+            .get(self.selected_channel)
+            .map(|c| c.id.as_str())
+    }
+
+    pub fn selected_channel_name(&self) -> String {
+        self.channels
+            .get(self.selected_channel)
+            .map(|c| format!("# {}", c.display_name))
+            .unwrap_or_else(|| "No channel selected".to_string())
+    }
+
+    pub fn next_teams_panel(&mut self) {
+        self.teams_panel = match self.teams_panel {
+            TeamsPanel::TeamList => TeamsPanel::ChannelList,
+            TeamsPanel::ChannelList => TeamsPanel::ChannelMessages,
+            TeamsPanel::ChannelMessages => TeamsPanel::ChannelInput,
+            TeamsPanel::ChannelInput => TeamsPanel::TeamList,
+        };
+    }
+
+    pub fn prev_teams_panel(&mut self) {
+        self.teams_panel = match self.teams_panel {
+            TeamsPanel::TeamList => TeamsPanel::ChannelInput,
+            TeamsPanel::ChannelList => TeamsPanel::TeamList,
+            TeamsPanel::ChannelMessages => TeamsPanel::ChannelList,
+            TeamsPanel::ChannelInput => TeamsPanel::ChannelMessages,
+        };
+    }
+
+    // ---- Channel input ----
+
+    pub fn channel_insert_char(&mut self, c: char) {
+        self.channel_input.insert(self.channel_input_cursor, c);
+        self.channel_input_cursor += c.len_utf8();
+    }
+
+    pub fn channel_delete_char(&mut self) {
+        if self.channel_input_cursor > 0 {
+            let prev_len = self.channel_input[..self.channel_input_cursor]
+                .chars()
+                .last()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
+            self.channel_input_cursor -= prev_len;
+            self.channel_input.remove(self.channel_input_cursor);
+        }
+    }
+
+    pub fn take_channel_input(&mut self) -> String {
+        let input = self.channel_input.clone();
+        self.channel_input.clear();
+        self.channel_input_cursor = 0;
+        input
+    }
+
+    pub fn channel_move_cursor_left(&mut self) {
+        if self.channel_input_cursor > 0 {
+            let prev_len = self.channel_input[..self.channel_input_cursor]
+                .chars()
+                .last()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
+            self.channel_input_cursor -= prev_len;
+        }
+    }
+
+    pub fn channel_move_cursor_right(&mut self) {
+        if self.channel_input_cursor < self.channel_input.len() {
+            let next_len = self.channel_input[self.channel_input_cursor..]
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
+            self.channel_input_cursor += next_len;
+        }
+    }
+
+    pub fn channel_scroll_up(&mut self) {
+        self.channel_scroll_offset = self.channel_scroll_offset.saturating_add(3);
+    }
+
+    pub fn channel_scroll_down(&mut self) {
+        self.channel_scroll_offset = self.channel_scroll_offset.saturating_sub(3);
+    }
+
+    // ---- Unread tracking ----
+
+    pub fn update_total_unread(&mut self) {
+        self.total_unread = self.chats.iter().map(|c| c.unread_count()).sum();
+    }
+
+    /// Detect new messages and return true if there are new ones (for notification bell)
+    pub fn detect_new_messages(&mut self) -> bool {
+        let new_ids: HashSet<String> = self
+            .messages
+            .iter()
+            .map(|m| m.id.clone())
+            .collect();
+
+        if self.known_message_ids.is_empty() {
+            self.known_message_ids = new_ids;
+            return false;
+        }
+
+        let has_new = new_ids.iter().any(|id| !self.known_message_ids.contains(id));
+        self.known_message_ids = new_ids;
+        has_new
     }
 }
