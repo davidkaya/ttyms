@@ -48,6 +48,7 @@ mod chat_selection {
                 chat_type: "oneOnOne".to_string(),
                 members: None,
                 last_message_preview: None,
+                unread_message_count: None,
             })
             .collect()
     }
@@ -431,5 +432,407 @@ mod refresh_tests {
             user_principal_name: None,
         });
         assert_eq!(app.current_user_id(), "user-42");
+    }
+}
+
+#[cfg(test)]
+mod view_mode_tests {
+    use ttyms::app::{App, ViewMode};
+
+    #[test]
+    fn default_view_mode_is_chats() {
+        let app = App::new();
+        assert_eq!(app.view_mode, ViewMode::Chats);
+    }
+
+    #[test]
+    fn switch_to_teams() {
+        let mut app = App::new();
+        app.switch_to_teams();
+        assert_eq!(app.view_mode, ViewMode::Teams);
+    }
+
+    #[test]
+    fn switch_to_chats() {
+        let mut app = App::new();
+        app.switch_to_teams();
+        app.switch_to_chats();
+        assert_eq!(app.view_mode, ViewMode::Chats);
+    }
+}
+
+#[cfg(test)]
+mod teams_navigation_tests {
+    use ttyms::app::{App, TeamsPanel};
+    use ttyms::models::{Team, Channel};
+
+    fn make_test_teams(count: usize) -> Vec<Team> {
+        (0..count)
+            .map(|i| Team {
+                id: format!("team-{}", i),
+                display_name: format!("Team {}", i),
+                description: None,
+            })
+            .collect()
+    }
+
+    fn make_test_channels(count: usize) -> Vec<Channel> {
+        (0..count)
+            .map(|i| Channel {
+                id: format!("channel-{}", i),
+                display_name: format!("Channel {}", i),
+                description: None,
+                membership_type: Some("standard".to_string()),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn select_next_team() {
+        let mut app = App::new();
+        app.teams = make_test_teams(3);
+        assert_eq!(app.selected_team, 0);
+        app.select_next_team();
+        assert_eq!(app.selected_team, 1);
+    }
+
+    #[test]
+    fn select_next_team_stops_at_end() {
+        let mut app = App::new();
+        app.teams = make_test_teams(2);
+        app.selected_team = 1;
+        app.select_next_team();
+        assert_eq!(app.selected_team, 1);
+    }
+
+    #[test]
+    fn select_prev_team() {
+        let mut app = App::new();
+        app.teams = make_test_teams(3);
+        app.selected_team = 2;
+        app.select_prev_team();
+        assert_eq!(app.selected_team, 1);
+    }
+
+    #[test]
+    fn select_prev_team_stops_at_zero() {
+        let mut app = App::new();
+        app.teams = make_test_teams(3);
+        app.select_prev_team();
+        assert_eq!(app.selected_team, 0);
+    }
+
+    #[test]
+    fn selected_team_id() {
+        let mut app = App::new();
+        app.teams = make_test_teams(3);
+        app.selected_team = 1;
+        assert_eq!(app.selected_team_id(), Some("team-1"));
+    }
+
+    #[test]
+    fn selected_team_name() {
+        let mut app = App::new();
+        app.teams = make_test_teams(3);
+        app.selected_team = 2;
+        assert_eq!(app.selected_team_name(), "Team 2");
+    }
+
+    #[test]
+    fn selected_team_name_fallback() {
+        let app = App::new();
+        assert_eq!(app.selected_team_name(), "No team selected");
+    }
+
+    #[test]
+    fn select_next_channel() {
+        let mut app = App::new();
+        app.channels = make_test_channels(3);
+        app.select_next_channel();
+        assert_eq!(app.selected_channel, 1);
+    }
+
+    #[test]
+    fn select_prev_channel() {
+        let mut app = App::new();
+        app.channels = make_test_channels(3);
+        app.selected_channel = 2;
+        app.select_prev_channel();
+        assert_eq!(app.selected_channel, 1);
+    }
+
+    #[test]
+    fn selected_channel_name() {
+        let mut app = App::new();
+        app.channels = make_test_channels(3);
+        app.selected_channel = 1;
+        assert_eq!(app.selected_channel_name(), "# Channel 1");
+    }
+
+    #[test]
+    fn teams_panel_cycles_forward() {
+        let mut app = App::new();
+        assert_eq!(app.teams_panel, TeamsPanel::TeamList);
+        app.next_teams_panel();
+        assert_eq!(app.teams_panel, TeamsPanel::ChannelList);
+        app.next_teams_panel();
+        assert_eq!(app.teams_panel, TeamsPanel::ChannelMessages);
+        app.next_teams_panel();
+        assert_eq!(app.teams_panel, TeamsPanel::ChannelInput);
+        app.next_teams_panel();
+        assert_eq!(app.teams_panel, TeamsPanel::TeamList);
+    }
+
+    #[test]
+    fn teams_panel_cycles_backward() {
+        let mut app = App::new();
+        app.prev_teams_panel();
+        assert_eq!(app.teams_panel, TeamsPanel::ChannelInput);
+        app.prev_teams_panel();
+        assert_eq!(app.teams_panel, TeamsPanel::ChannelMessages);
+    }
+}
+
+#[cfg(test)]
+mod message_selection_tests {
+    use ttyms::app::App;
+    use ttyms::models::*;
+
+    fn make_messages() -> Vec<Message> {
+        vec![
+            Message {
+                id: "sys1".to_string(),
+                message_type: Some("systemEventMessage".to_string()),
+                body: None, from: None, created_date_time: None, reactions: None,
+            },
+            Message {
+                id: "msg1".to_string(),
+                message_type: Some("message".to_string()),
+                body: Some(MessageBody { content: Some("First".to_string()), content_type: None }),
+                from: None, created_date_time: None, reactions: None,
+            },
+            Message {
+                id: "msg2".to_string(),
+                message_type: Some("message".to_string()),
+                body: Some(MessageBody { content: Some("Second".to_string()), content_type: None }),
+                from: None, created_date_time: None, reactions: None,
+            },
+            Message {
+                id: "msg3".to_string(),
+                message_type: Some("message".to_string()),
+                body: Some(MessageBody { content: Some("Third".to_string()), content_type: None }),
+                from: None, created_date_time: None, reactions: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn select_message_up_selects_last_user_message() {
+        let mut app = App::new();
+        app.messages = make_messages();
+        assert!(app.selected_message.is_none());
+        app.select_message_up();
+        assert_eq!(app.selected_message, Some(3)); // "msg3" at index 3
+    }
+
+    #[test]
+    fn select_message_up_moves_to_previous() {
+        let mut app = App::new();
+        app.messages = make_messages();
+        app.selected_message = Some(3);
+        app.select_message_up();
+        assert_eq!(app.selected_message, Some(2));
+        app.select_message_up();
+        assert_eq!(app.selected_message, Some(1)); // Skips system message at 0
+    }
+
+    #[test]
+    fn select_message_up_stops_at_first() {
+        let mut app = App::new();
+        app.messages = make_messages();
+        app.selected_message = Some(1);
+        app.select_message_up();
+        assert_eq!(app.selected_message, Some(1));
+    }
+
+    #[test]
+    fn select_message_down_moves_forward() {
+        let mut app = App::new();
+        app.messages = make_messages();
+        app.selected_message = Some(1);
+        app.select_message_down();
+        assert_eq!(app.selected_message, Some(2));
+    }
+
+    #[test]
+    fn select_message_down_clears_at_end() {
+        let mut app = App::new();
+        app.messages = make_messages();
+        app.selected_message = Some(3);
+        app.select_message_down();
+        assert!(app.selected_message.is_none());
+    }
+
+    #[test]
+    fn selected_message_id() {
+        let mut app = App::new();
+        app.messages = make_messages();
+        app.selected_message = Some(2);
+        assert_eq!(app.selected_message_id(), Some("msg2"));
+    }
+
+    #[test]
+    fn selected_message_id_none() {
+        let app = App::new();
+        assert_eq!(app.selected_message_id(), None);
+    }
+}
+
+#[cfg(test)]
+mod dialog_tests {
+    use ttyms::app::{App, DialogMode};
+
+    #[test]
+    fn reaction_picker_requires_selected_message() {
+        let mut app = App::new();
+        app.open_reaction_picker();
+        assert_eq!(app.dialog, DialogMode::None);
+    }
+
+    #[test]
+    fn reaction_picker_opens_with_selected_message() {
+        let mut app = App::new();
+        app.messages = vec![ttyms::models::Message {
+            id: "m1".to_string(),
+            message_type: Some("message".to_string()),
+            body: None, from: None, created_date_time: None, reactions: None,
+        }];
+        app.selected_message = Some(0);
+        app.open_reaction_picker();
+        assert_eq!(app.dialog, DialogMode::ReactionPicker);
+    }
+
+    #[test]
+    fn presence_picker_opens() {
+        let mut app = App::new();
+        app.open_presence_picker();
+        assert_eq!(app.dialog, DialogMode::PresencePicker);
+    }
+
+    #[test]
+    fn close_dialog_clears() {
+        let mut app = App::new();
+        app.open_presence_picker();
+        app.close_dialog();
+        assert_eq!(app.dialog, DialogMode::None);
+    }
+}
+
+#[cfg(test)]
+mod channel_input_tests {
+    use ttyms::app::App;
+
+    #[test]
+    fn channel_insert_and_delete() {
+        let mut app = App::new();
+        app.channel_insert_char('h');
+        app.channel_insert_char('i');
+        assert_eq!(app.channel_input, "hi");
+        app.channel_delete_char();
+        assert_eq!(app.channel_input, "h");
+    }
+
+    #[test]
+    fn take_channel_input_clears() {
+        let mut app = App::new();
+        app.channel_insert_char('x');
+        let taken = app.take_channel_input();
+        assert_eq!(taken, "x");
+        assert_eq!(app.channel_input, "");
+        assert_eq!(app.channel_input_cursor, 0);
+    }
+
+    #[test]
+    fn channel_cursor_movement() {
+        let mut app = App::new();
+        app.channel_insert_char('a');
+        app.channel_insert_char('b');
+        app.channel_move_cursor_left();
+        assert_eq!(app.channel_input_cursor, 1);
+        app.channel_move_cursor_right();
+        assert_eq!(app.channel_input_cursor, 2);
+    }
+
+    #[test]
+    fn channel_scroll() {
+        let mut app = App::new();
+        app.channel_scroll_up();
+        assert_eq!(app.channel_scroll_offset, 3);
+        app.channel_scroll_down();
+        assert_eq!(app.channel_scroll_offset, 0);
+    }
+}
+
+#[cfg(test)]
+mod unread_tracking_tests {
+    use ttyms::app::App;
+    use ttyms::models::*;
+
+    #[test]
+    fn update_total_unread() {
+        let mut app = App::new();
+        app.chats = vec![
+            Chat {
+                id: "c1".to_string(), topic: None, chat_type: "oneOnOne".to_string(),
+                members: None, last_message_preview: None, unread_message_count: Some(3),
+            },
+            Chat {
+                id: "c2".to_string(), topic: None, chat_type: "oneOnOne".to_string(),
+                members: None, last_message_preview: None, unread_message_count: Some(2),
+            },
+            Chat {
+                id: "c3".to_string(), topic: None, chat_type: "oneOnOne".to_string(),
+                members: None, last_message_preview: None, unread_message_count: None,
+            },
+        ];
+        app.update_total_unread();
+        assert_eq!(app.total_unread, 5);
+    }
+
+    #[test]
+    fn detect_new_messages_first_time() {
+        let mut app = App::new();
+        app.messages = vec![Message {
+            id: "m1".to_string(), message_type: None, body: None,
+            from: None, created_date_time: None, reactions: None,
+        }];
+        assert!(!app.detect_new_messages()); // First time is init
+    }
+
+    #[test]
+    fn detect_new_messages_returns_true_on_new() {
+        let mut app = App::new();
+        app.messages = vec![Message {
+            id: "m1".to_string(), message_type: None, body: None,
+            from: None, created_date_time: None, reactions: None,
+        }];
+        app.detect_new_messages(); // Initialize
+
+        app.messages.push(Message {
+            id: "m2".to_string(), message_type: None, body: None,
+            from: None, created_date_time: None, reactions: None,
+        });
+        assert!(app.detect_new_messages());
+    }
+
+    #[test]
+    fn detect_new_messages_returns_false_when_same() {
+        let mut app = App::new();
+        app.messages = vec![Message {
+            id: "m1".to_string(), message_type: None, body: None,
+            from: None, created_date_time: None, reactions: None,
+        }];
+        app.detect_new_messages();
+        assert!(!app.detect_new_messages());
     }
 }

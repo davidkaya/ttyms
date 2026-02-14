@@ -95,8 +95,10 @@ mod chat_tests {
             last_message_preview: preview.map(|p| MessagePreview {
                 body: Some(MessageBody {
                     content: Some(p.to_string()),
+                    content_type: None,
                 }),
             }),
+            unread_message_count: None,
         }
     }
 
@@ -161,6 +163,7 @@ mod message_tests {
             message_type: message_type.map(String::from),
             body: content.map(|c| MessageBody {
                 content: Some(c.to_string()),
+                content_type: None,
             }),
             from: sender_name.map(|name| MessageFrom {
                 user: Some(MessageUser {
@@ -169,6 +172,7 @@ mod message_tests {
                 }),
             }),
             created_date_time: datetime.map(String::from),
+            reactions: None,
         }
     }
 
@@ -198,6 +202,7 @@ mod message_tests {
             body: None,
             from: None,
             created_date_time: None,
+            reactions: None,
         };
         assert_eq!(msg.content_text(), "");
     }
@@ -315,5 +320,318 @@ mod deserialization_tests {
         let resp: GraphResponse<User> = serde_json::from_str(json).unwrap();
         assert_eq!(resp.value.len(), 2);
         assert_eq!(resp.value[0].display_name, "A");
+    }
+}
+
+#[cfg(test)]
+mod reaction_tests {
+    use ttyms::models::*;
+
+    fn make_message_with_reactions(reactions: Vec<(&str, &str)>) -> Message {
+        Message {
+            id: "msg-1".to_string(),
+            message_type: Some("message".to_string()),
+            body: Some(MessageBody {
+                content: Some("Hello".to_string()),
+                content_type: None,
+            }),
+            from: None,
+            created_date_time: None,
+            reactions: Some(
+                reactions
+                    .into_iter()
+                    .map(|(rtype, uid)| ChatMessageReaction {
+                        reaction_type: rtype.to_string(),
+                        user: Some(ReactionIdentitySet {
+                            user: Some(MessageUser {
+                                display_name: Some("User".to_string()),
+                                id: Some(uid.to_string()),
+                            }),
+                        }),
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    #[test]
+    fn reactions_summary_counts_by_type() {
+        let msg = make_message_with_reactions(vec![
+            ("like", "u1"),
+            ("like", "u2"),
+            ("heart", "u1"),
+        ]);
+        let summary = msg.reactions_summary();
+        assert_eq!(summary.len(), 2);
+        // "like" should have count 2, "heart" count 1
+        let like_count = summary.iter().find(|(e, _)| e == "👍").map(|(_, c)| *c);
+        let heart_count = summary.iter().find(|(e, _)| e == "❤️").map(|(_, c)| *c);
+        assert_eq!(like_count, Some(2));
+        assert_eq!(heart_count, Some(1));
+    }
+
+    #[test]
+    fn reactions_summary_empty_when_no_reactions() {
+        let msg = Message {
+            id: "msg".to_string(),
+            message_type: None,
+            body: None,
+            from: None,
+            created_date_time: None,
+            reactions: None,
+        };
+        assert!(msg.reactions_summary().is_empty());
+    }
+
+    #[test]
+    fn reactions_summary_sorted_by_count_descending() {
+        let msg = make_message_with_reactions(vec![
+            ("heart", "u1"),
+            ("like", "u1"),
+            ("like", "u2"),
+            ("like", "u3"),
+        ]);
+        let summary = msg.reactions_summary();
+        assert_eq!(summary[0].1, 3); // like: 3
+        assert_eq!(summary[1].1, 1); // heart: 1
+    }
+
+    #[test]
+    fn reaction_emoji_maps_known_types() {
+        assert_eq!(reaction_emoji("like"), "👍");
+        assert_eq!(reaction_emoji("heart"), "❤️");
+        assert_eq!(reaction_emoji("laugh"), "😂");
+        assert_eq!(reaction_emoji("surprised"), "😮");
+        assert_eq!(reaction_emoji("sad"), "😢");
+        assert_eq!(reaction_emoji("angry"), "😡");
+    }
+
+    #[test]
+    fn reaction_emoji_returns_unknown_type_as_is() {
+        assert_eq!(reaction_emoji("custom"), "custom");
+    }
+}
+
+#[cfg(test)]
+mod presence_tests {
+    use ttyms::models::*;
+
+    #[test]
+    fn presence_indicator_available() {
+        let (icon, text) = presence_indicator("Available");
+        assert_eq!(icon, "🟢");
+        assert_eq!(text, "Available");
+    }
+
+    #[test]
+    fn presence_indicator_busy() {
+        let (icon, _) = presence_indicator("Busy");
+        assert_eq!(icon, "🔴");
+    }
+
+    #[test]
+    fn presence_indicator_dnd() {
+        let (icon, _) = presence_indicator("DoNotDisturb");
+        assert_eq!(icon, "⛔");
+    }
+
+    #[test]
+    fn presence_indicator_away() {
+        let (icon, _) = presence_indicator("Away");
+        assert_eq!(icon, "🟡");
+    }
+
+    #[test]
+    fn presence_indicator_offline() {
+        let (icon, _) = presence_indicator("Offline");
+        assert_eq!(icon, "⚫");
+    }
+
+    #[test]
+    fn presence_indicator_unknown() {
+        let (icon, text) = presence_indicator("SomethingElse");
+        assert_eq!(icon, "⚪");
+        assert_eq!(text, "Unknown");
+    }
+}
+
+#[cfg(test)]
+mod rich_text_tests {
+    use ttyms::models::*;
+
+    #[test]
+    fn plain_text_returns_plain_segment() {
+        let segments = parse_rich_text("Hello world");
+        assert_eq!(segments, vec![RichSegment::Plain("Hello world".to_string())]);
+    }
+
+    #[test]
+    fn bold_tag_returns_bold_segment() {
+        let segments = parse_rich_text("before <b>bold</b> after");
+        assert!(segments.contains(&RichSegment::Bold("bold".to_string())));
+    }
+
+    #[test]
+    fn strong_tag_returns_bold_segment() {
+        let segments = parse_rich_text("<strong>strong</strong>");
+        assert_eq!(segments, vec![RichSegment::Bold("strong".to_string())]);
+    }
+
+    #[test]
+    fn italic_tag_returns_italic_segment() {
+        let segments = parse_rich_text("<i>italic</i>");
+        assert_eq!(segments, vec![RichSegment::Italic("italic".to_string())]);
+    }
+
+    #[test]
+    fn em_tag_returns_italic_segment() {
+        let segments = parse_rich_text("<em>emphasis</em>");
+        assert_eq!(segments, vec![RichSegment::Italic("emphasis".to_string())]);
+    }
+
+    #[test]
+    fn code_tag_returns_code_segment() {
+        let segments = parse_rich_text("<code>let x = 1</code>");
+        assert_eq!(segments, vec![RichSegment::Code("let x = 1".to_string())]);
+    }
+
+    #[test]
+    fn br_tag_returns_newline() {
+        let segments = parse_rich_text("line1<br>line2");
+        assert!(segments.contains(&RichSegment::Newline));
+    }
+
+    #[test]
+    fn link_tag_returns_link_segment() {
+        let segments = parse_rich_text(r#"<a href="http://example.com">click</a>"#);
+        assert!(segments.contains(&RichSegment::Link {
+            text: "click".to_string(),
+            url: "http://example.com".to_string(),
+        }));
+    }
+
+    #[test]
+    fn mixed_content_produces_multiple_segments() {
+        let segments = parse_rich_text("Hello <b>bold</b> world");
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0], RichSegment::Plain("Hello ".to_string()));
+        assert_eq!(segments[1], RichSegment::Bold("bold".to_string()));
+        assert_eq!(segments[2], RichSegment::Plain(" world".to_string()));
+    }
+
+    #[test]
+    fn entities_decoded_in_rich_text() {
+        let segments = parse_rich_text("A &amp; B");
+        assert_eq!(segments, vec![RichSegment::Plain("A & B".to_string())]);
+    }
+
+    #[test]
+    fn empty_input_returns_plain_empty() {
+        let segments = parse_rich_text("");
+        assert_eq!(segments.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod unread_tests {
+    use ttyms::models::*;
+
+    #[test]
+    fn unread_count_returns_value() {
+        let chat = Chat {
+            id: "c1".to_string(),
+            topic: None,
+            chat_type: "oneOnOne".to_string(),
+            members: None,
+            last_message_preview: None,
+            unread_message_count: Some(5),
+        };
+        assert_eq!(chat.unread_count(), 5);
+    }
+
+    #[test]
+    fn unread_count_defaults_to_zero() {
+        let chat = Chat {
+            id: "c1".to_string(),
+            topic: None,
+            chat_type: "oneOnOne".to_string(),
+            members: None,
+            last_message_preview: None,
+            unread_message_count: None,
+        };
+        assert_eq!(chat.unread_count(), 0);
+    }
+
+    #[test]
+    fn deserialize_chat_with_unread() {
+        let json = r#"{
+            "id": "chat1",
+            "chatType": "oneOnOne",
+            "unreadMessageCount": 3
+        }"#;
+        let chat: Chat = serde_json::from_str(json).unwrap();
+        assert_eq!(chat.unread_count(), 3);
+    }
+
+    #[test]
+    fn deserialize_message_with_reactions() {
+        let json = r#"{
+            "id": "msg1",
+            "messageType": "message",
+            "body": {"content": "Hello"},
+            "reactions": [
+                {"reactionType": "like", "user": {"user": {"id": "u1", "displayName": "Alice"}}},
+                {"reactionType": "like", "user": {"user": {"id": "u2", "displayName": "Bob"}}}
+            ]
+        }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.reactions.as_ref().unwrap().len(), 2);
+        let summary = msg.reactions_summary();
+        assert_eq!(summary.len(), 1);
+        assert_eq!(summary[0], ("👍".to_string(), 2));
+    }
+}
+
+#[cfg(test)]
+mod team_channel_deserialization {
+    use ttyms::models::*;
+
+    #[test]
+    fn deserialize_team() {
+        let json = r#"{"id":"t1","displayName":"Engineering","description":"Dev team"}"#;
+        let team: Team = serde_json::from_str(json).unwrap();
+        assert_eq!(team.id, "t1");
+        assert_eq!(team.display_name, "Engineering");
+        assert_eq!(team.description.as_deref(), Some("Dev team"));
+    }
+
+    #[test]
+    fn deserialize_channel() {
+        let json = r#"{"id":"c1","displayName":"General","membershipType":"standard"}"#;
+        let channel: Channel = serde_json::from_str(json).unwrap();
+        assert_eq!(channel.id, "c1");
+        assert_eq!(channel.display_name, "General");
+        assert_eq!(channel.membership_type.as_deref(), Some("standard"));
+    }
+
+    #[test]
+    fn deserialize_channel_private() {
+        let json = r#"{"id":"c2","displayName":"Secret","membershipType":"private"}"#;
+        let channel: Channel = serde_json::from_str(json).unwrap();
+        assert_eq!(channel.membership_type.as_deref(), Some("private"));
+    }
+
+    #[test]
+    fn deserialize_presence() {
+        let json = r#"{"availability":"Available","activity":"Available"}"#;
+        let presence: Presence = serde_json::from_str(json).unwrap();
+        assert_eq!(presence.availability.as_deref(), Some("Available"));
+    }
+
+    #[test]
+    fn deserialize_teams_response() {
+        let json = r#"{"value":[{"id":"t1","displayName":"Team A"},{"id":"t2","displayName":"Team B"}]}"#;
+        let resp: GraphResponse<Team> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.value.len(), 2);
     }
 }
