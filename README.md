@@ -7,32 +7,38 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 ## Features
 
 - **1:1 and group chat messaging** — browse all your Teams chats, read messages, and reply
-- **Beautiful TUI** — clean terminal interface with panels, color-coded messages, and keyboard navigation
-- **Secure by design** — tokens stored in OS credential manager (Windows Credential Manager / macOS Keychain / Linux Secret Service), sensitive data zeroized in memory
-- **Auto-refresh** — messages update automatically every 15 seconds
+- **Teams & Channels** — browse joined teams, navigate channels, read and post channel messages
+- **Reactions** — view message reactions (👍❤️😂😮😢😡) and react with keyboard shortcut
+- **Presence** — see online status of contacts, set your own presence (Available, Busy, DND, Away)
+- **Unread indicators** — unread message counts per chat, total unread badge in header
+- **Rich text rendering** — bold, italic, code, and links rendered with terminal formatting
+- **Beautiful TUI** — clean terminal interface with tabbed views, panels, color-coded messages
+- **Secure by design** — tokens stored in OS credential manager, sensitive data zeroized in memory
+- **Auto-refresh** — messages update automatically every 15 seconds with terminal bell for new messages
 - **Vim-style navigation** — use `j`/`k` or arrow keys to navigate
 
 ## Screenshots
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ ◆ TTYMS │ Microsoft Teams                        John Doe      │
+│ ◆ TTYMS │ 1:Chats (3)  2:Teams │ 🟢 John Doe                  │
 ├───────────────────┬─────────────────────────────────────────────┤
 │ Chats             │ Project Discussion                          │
 │                   │─────────────────────────────────────────────│
-│ ▸ Project Disc…   │ Alice Smith                       10:30    │
+│ ▸ 🟢 Alice (2)   │ Alice Smith                       10:30    │
 │   Hey team, the…  │   Hey team, the deployment went well!      │
-│                   │                                             │
-│   Alice Smith     │ Bob Johnson                       10:32    │
-│   Can you review… │   Great news! Any issues?                  │
-│                   │                                             │
-│   Dev Team        │ You                               10:33    │
-│   Meeting at 3pm  │   Nope, all smooth!                        │
+│                   │   👍 2  ❤️ 1                                │
+│   🔴 Bob          │                                             │
+│   Can you review… │ Bob Johnson                       10:32    │
+│                   │   Great news! Any issues?                  │
+│   Dev Team        │                                             │
+│   Meeting at 3pm  │ You                               10:33    │
+│                   │   Nope, all smooth!                 ◀      │
 │                   │─────────────────────────────────────────────│
 │                   │ Message                                     │
 │                   │ > Great work everyone!                      │
 ├───────────────────┴─────────────────────────────────────────────┤
-│ Tab Switch │ Enter Send │ ↑↓ Navigate │ r Refresh │ q Quit     │
+│ 1/2 View │ Tab Panel │ n New │ e React │ p Status │ q Quit     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,9 +65,16 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
    - Under custom redirect URIs, add: `http://localhost` → Save
 6. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**:
    - `User.Read`
-   - `Chat.Read`
+   - `User.ReadBasic.All`
+   - `Chat.ReadWrite`
    - `ChatMessage.Read`
    - `ChatMessage.Send`
+   - `Presence.Read`
+   - `Presence.ReadWrite`
+   - `Team.ReadBasic.All`
+   - `Channel.ReadBasic.All`
+   - `ChannelMessage.Read.All`
+   - `ChannelMessage.Send`
 7. Copy the **Application (client) ID**
 
 ### 2. Configure ttyms
@@ -106,17 +119,52 @@ cargo run -- --pkce
 
 ## Usage
 
-### Keyboard Shortcuts
+### Views
+
+| Key | View |
+|-----|------|
+| `1` | Chats — 1:1 and group chat messaging |
+| `2` | Teams — browse teams and channel conversations |
+
+### Keyboard Shortcuts (Chats)
 
 | Key | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | Switch between panels (Chats → Messages → Input) |
-| `↑`/`↓` or `j`/`k` | Navigate chats / scroll messages |
+| `↑`/`↓` or `j`/`k` | Navigate chats / scroll messages / select messages |
 | `Enter` | Send message / jump to input |
+| `n` | New chat |
+| `s` | Toggle message selection (in Messages panel) |
+| `e` | React to selected message |
+| `p` | Set your presence status |
 | `r` | Refresh chats and messages |
-| `Esc` | Back to chat list |
+| `Esc` | Back to chat list / deselect message |
 | `q` | Quit |
 | `Ctrl+C` | Force quit |
+
+### Keyboard Shortcuts (Teams)
+
+| Key | Action |
+|---|---|
+| `Tab` / `Shift+Tab` | Switch panels (Teams → Channels → Messages → Input) |
+| `↑`/`↓` or `j`/`k` | Navigate teams / channels / scroll messages |
+| `Enter` | Expand team / select channel / send message |
+| `Esc` | Go back one panel |
+| `r` | Refresh current view |
+
+### Reaction Picker
+
+When a message is selected (`s` key), press `e` to open the reaction picker:
+- `←`/`→` to choose emoji: 👍 ❤️ 😂 😮 😢 😡
+- `Enter` to react
+- `Esc` to cancel
+
+### Presence Picker
+
+Press `p` to set your status:
+- `↑`/`↓` to select: 🟢 Available, 🔴 Busy, ⛔ DND, 🟡 Away, ⚫ Offline
+- `Enter` to set
+- `Esc` to cancel
 
 ### CLI Options
 
@@ -134,8 +182,9 @@ ttyms --logout   # Clear stored credentials securely
 | Memory safety | Tokens zeroized on drop via [`zeroize`](https://crates.io/crates/zeroize) crate |
 | Auth flow | OAuth2 Device Code Flow (public client, no client secret stored) |
 | Transport | All API calls over HTTPS to Microsoft Graph |
-| Scopes | Minimal permissions: only User.Read, Chat.Read, ChatMessage.Read, ChatMessage.Send |
+| Scopes | Minimal permissions per feature, all delegated (user context only) |
 | Logout | `--logout` securely removes credentials from OS store |
+| Read receipts | Chats automatically marked as read when viewed |
 
 ## Building
 
