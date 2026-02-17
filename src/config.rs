@@ -62,8 +62,3 @@ pub fn print_setup_guide() {
     eprintln!("       ChannelMessage.Read.All, ChannelMessage.Send");
     eprintln!("  8. Copy the 'Application (client) ID' to your config file");
 }
-
-/// Stable session ID for presence API
-pub fn app_session_id() -> String {
-    "ttyms-terminal-client".to_string()
-}

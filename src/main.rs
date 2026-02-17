@@ -16,6 +16,14 @@ use std::io;
 
 use app::{AppScreen, DialogMode, Panel, TeamsPanel, ViewMode};
 
+// Background task results delivered via channel
+enum BgResult {
+    Channels(String, Vec<models::Channel>),
+    ChannelMessages(String, Vec<models::Message>),
+    PresenceMap(std::collections::HashMap<String, String>),
+    MyPresence(String),
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -107,6 +115,9 @@ async fn run_app(
     let mut app = app::App::new();
     let mut graph = client::GraphClient::new(token.access_token.clone());
 
+    // Background task channel for non-blocking data loading
+    let (bg_tx, mut bg_rx) = tokio::sync::mpsc::unbounded_channel::<BgResult>();
+
     // Show loading screen
     app.screen = AppScreen::Loading {
         message: "Loading your chats...".to_string(),
@@ -151,13 +162,43 @@ async fn run_app(
         }
     }
 
-    // Fetch initial presence (best-effort)
-    load_presence(&graph, &mut app).await;
+    // Fetch presence in background (non-blocking)
+    spawn_presence_load(&graph, &app, &bg_tx);
 
     app.mark_refreshed();
 
     // Main event loop
     loop {
+        // Process any completed background tasks (non-blocking)
+        while let Ok(result) = bg_rx.try_recv() {
+            match result {
+                BgResult::Channels(team_id, channels) => {
+                    // Cache and update display if this team is still selected
+                    app.channels_cache.insert(team_id.clone(), channels.clone());
+                    if app.selected_team_id() == Some(team_id.as_str()) {
+                        app.channels = channels;
+                        if app.selected_channel == 0 {
+                            app.show_cached_messages_for_selected_channel();
+                        }
+                    }
+                }
+                BgResult::ChannelMessages(channel_id, messages) => {
+                    app.channel_message_cache.insert(channel_id.clone(), messages.clone());
+                    if app.selected_channel_id() == Some(channel_id.as_str())
+                        && app.view_mode == ViewMode::Teams
+                    {
+                        app.channel_messages = messages;
+                    }
+                }
+                BgResult::PresenceMap(map) => {
+                    app.presence_map.extend(map);
+                }
+                BgResult::MyPresence(avail) => {
+                    app.my_presence = avail;
+                }
+            }
+        }
+
         terminal.draw(|f| ui::draw(f, &app))?;
 
         if event::poll(std::time::Duration::from_millis(100))? {
@@ -202,7 +243,7 @@ async fn run_app(
                         && app.teams_panel != TeamsPanel::ChannelInput =>
                     {
                         if app.teams.is_empty() {
-                            load_teams(&graph, &mut app).await;
+                            load_teams_with_preload(&graph, &mut app, &bg_tx).await;
                         }
                         app.switch_to_teams();
                         continue;
@@ -218,7 +259,9 @@ async fn run_app(
 
                 match app.view_mode {
                     ViewMode::Chats => handle_chats_keys(&mut app, &graph, key.code).await,
-                    ViewMode::Teams => handle_teams_keys(&mut app, &graph, key.code).await,
+                    ViewMode::Teams => {
+                        handle_teams_keys(&mut app, &graph, &bg_tx, key.code).await;
+                    }
                 }
             }
         }
@@ -252,12 +295,15 @@ async fn run_app(
                         app.selected_channel_id().map(String::from),
                     ) {
                         if let Ok(msgs) = graph.get_channel_messages(&team_id, &channel_id).await {
-                            app.channel_messages = msgs;
+                            app.channel_messages = msgs.clone();
+                            app.channel_message_cache.insert(channel_id, msgs);
                         }
                     }
                 }
             }
 
+            // Refresh presence in background
+            spawn_presence_load(&graph, &app, &bg_tx);
             app.mark_refreshed();
         }
     }
@@ -353,31 +399,34 @@ async fn handle_chats_keys(app: &mut app::App, graph: &client::GraphClient, code
 
 // ---- Teams view key handling ----
 
-async fn handle_teams_keys(app: &mut app::App, graph: &client::GraphClient, code: KeyCode) {
+async fn handle_teams_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
     match app.teams_panel {
         TeamsPanel::TeamList => match code {
             KeyCode::Char('q') => std::process::exit(0),
             KeyCode::Tab => app.next_teams_panel(),
             KeyCode::BackTab => app.prev_teams_panel(),
             KeyCode::Up | KeyCode::Char('k') => {
-                let prev = app.selected_team;
                 app.select_prev_team();
-                if prev != app.selected_team {
-                    load_channels(graph, app).await;
-                }
+                app.show_cached_channels_for_selected_team();
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let prev = app.selected_team;
                 app.select_next_team();
-                if prev != app.selected_team {
-                    load_channels(graph, app).await;
-                }
+                app.show_cached_channels_for_selected_team();
             }
             KeyCode::Enter => {
-                load_channels(graph, app).await;
-                app.teams_panel = TeamsPanel::ChannelList;
+                // Show cached channels immediately, then refresh in background
+                app.show_cached_channels_for_selected_team();
+                load_channels_with_preload(graph, app, bg_tx).await;
+                if !app.channels.is_empty() {
+                    app.teams_panel = TeamsPanel::ChannelList;
+                }
             }
-            KeyCode::Char('r') => load_teams(graph, app).await,
+            KeyCode::Char('r') => load_teams_with_preload(graph, app, bg_tx).await,
             _ => {}
         },
         TeamsPanel::ChannelList => match code {
@@ -385,21 +434,16 @@ async fn handle_teams_keys(app: &mut app::App, graph: &client::GraphClient, code
             KeyCode::Tab => app.next_teams_panel(),
             KeyCode::BackTab => app.prev_teams_panel(),
             KeyCode::Up | KeyCode::Char('k') => {
-                let prev = app.selected_channel;
                 app.select_prev_channel();
-                if prev != app.selected_channel {
-                    load_channel_messages(graph, app).await;
-                }
+                app.show_cached_messages_for_selected_channel();
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let prev = app.selected_channel;
                 app.select_next_channel();
-                if prev != app.selected_channel {
-                    load_channel_messages(graph, app).await;
-                }
+                app.show_cached_messages_for_selected_channel();
             }
             KeyCode::Enter => {
-                load_channel_messages(graph, app).await;
+                app.show_cached_messages_for_selected_channel();
+                load_channel_messages_cached(graph, app).await;
                 app.teams_panel = TeamsPanel::ChannelMessages;
             }
             KeyCode::Esc => app.teams_panel = TeamsPanel::TeamList,
@@ -411,7 +455,7 @@ async fn handle_teams_keys(app: &mut app::App, graph: &client::GraphClient, code
             KeyCode::BackTab => app.prev_teams_panel(),
             KeyCode::Up | KeyCode::Char('k') => app.channel_scroll_up(),
             KeyCode::Down | KeyCode::Char('j') => app.channel_scroll_down(),
-            KeyCode::Char('r') => load_channel_messages(graph, app).await,
+            KeyCode::Char('r') => load_channel_messages_cached(graph, app).await,
             KeyCode::Enter => app.teams_panel = TeamsPanel::ChannelInput,
             KeyCode::Esc => app.teams_panel = TeamsPanel::ChannelList,
             _ => {}
@@ -648,24 +692,24 @@ async fn refresh_all(graph: &client::GraphClient, app: &mut app::App) {
         }
         Err(e) => app.status_message = format!("Refresh failed: {}", e),
     }
-    // Refresh presence too
-    load_presence(graph, app).await;
     app.mark_refreshed();
 }
 
-async fn load_presence(graph: &client::GraphClient, app: &mut app::App) {
-    // Load own presence
-    if let Ok(p) = graph.get_my_presence().await {
-        app.my_presence = p.availability.unwrap_or_else(|| "PresenceUnknown".to_string());
-    }
-
-    // Load presence for chat members
+/// Spawn presence loading as a background task (non-blocking)
+fn spawn_presence_load(
+    graph: &client::GraphClient,
+    app: &app::App,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+) {
+    let bg_graph = graph.clone_for_background();
+    let tx = bg_tx.clone();
+    let current_uid = app.current_user_id().to_string();
     let mut user_ids: Vec<String> = Vec::new();
     for chat in &app.chats {
         if let Some(ref members) = chat.members {
             for m in members {
                 if let Some(ref uid) = m.user_id {
-                    if uid != app.current_user_id() && !user_ids.contains(uid) {
+                    if uid != &current_uid && !user_ids.contains(uid) {
                         user_ids.push(uid.clone());
                     }
                 }
@@ -673,43 +717,84 @@ async fn load_presence(graph: &client::GraphClient, app: &mut app::App) {
         }
     }
 
-    // Batch presence query (max 650 per call)
-    for chunk in user_ids.chunks(650) {
-        if let Ok(presences) = graph.get_presences(&chunk.to_vec()).await {
-            for p in presences {
-                if let Some(avail) = p.availability {
-                    app.presence_map.insert(p.id.clone(), avail);
+    tokio::spawn(async move {
+        // Own presence
+        if let Ok(p) = bg_graph.get_my_presence().await {
+            if let Some(avail) = p.availability {
+                let _ = tx.send(BgResult::MyPresence(avail));
+            }
+        }
+        // Others' presence (batch, max 650 per call)
+        for chunk in user_ids.chunks(650) {
+            if let Ok(presences) = bg_graph.get_presences(&chunk.to_vec()).await {
+                let map: std::collections::HashMap<String, String> = presences
+                    .into_iter()
+                    .filter_map(|p| p.availability.map(|a| (p.id, a)))
+                    .collect();
+                if !map.is_empty() {
+                    let _ = tx.send(BgResult::PresenceMap(map));
                 }
             }
         }
-    }
+    });
 }
 
-async fn load_teams(graph: &client::GraphClient, app: &mut app::App) {
+async fn load_teams_with_preload(
+    graph: &client::GraphClient,
+    app: &mut app::App,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+) {
     app.status_message = "Loading teams...".to_string();
     match graph.list_teams().await {
         Ok(teams) => {
             app.teams = teams;
             if !app.teams.is_empty() {
                 app.selected_team = 0;
-                load_channels(graph, app).await;
+                // Load first team's channels immediately
+                load_channels_with_preload(graph, app, bg_tx).await;
             }
+            // Spawn background preload of channels for ALL teams
+            spawn_channels_preload(graph, app, bg_tx);
             app.status_message.clear();
         }
         Err(e) => app.status_message = format!("Teams: {}", e),
     }
 }
 
-async fn load_channels(graph: &client::GraphClient, app: &mut app::App) {
+/// Preload channels for all teams in background
+fn spawn_channels_preload(
+    graph: &client::GraphClient,
+    app: &app::App,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+) {
+    for team in &app.teams {
+        let bg_graph = graph.clone_for_background();
+        let tx = bg_tx.clone();
+        let team_id = team.id.clone();
+        tokio::spawn(async move {
+            if let Ok(channels) = bg_graph.list_channels(&team_id).await {
+                let _ = tx.send(BgResult::Channels(team_id, channels));
+            }
+        });
+    }
+}
+
+async fn load_channels_with_preload(
+    graph: &client::GraphClient,
+    app: &mut app::App,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+) {
     if let Some(team_id) = app.selected_team_id().map(String::from) {
         match graph.list_channels(&team_id).await {
             Ok(channels) => {
+                app.channels_cache.insert(team_id.clone(), channels.clone());
                 app.channels = channels;
                 app.selected_channel = 0;
-                app.channel_messages.clear();
                 app.channel_scroll_offset = 0;
                 if !app.channels.is_empty() {
-                    load_channel_messages(graph, app).await;
+                    load_channel_messages_cached(graph, app).await;
+                    // Background preload messages for all other channels
+                    spawn_channel_messages_preload(graph, app, &team_id, bg_tx);
                 }
             }
             Err(e) => app.status_message = format!("Channels: {}", e),
@@ -717,7 +802,32 @@ async fn load_channels(graph: &client::GraphClient, app: &mut app::App) {
     }
 }
 
-async fn load_channel_messages(graph: &client::GraphClient, app: &mut app::App) {
+/// Preload messages for all channels of a team in background
+fn spawn_channel_messages_preload(
+    graph: &client::GraphClient,
+    app: &app::App,
+    team_id: &str,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+) {
+    let selected_ch_id = app.selected_channel_id().map(String::from);
+    for ch in &app.channels {
+        // Skip the already-loaded channel
+        if Some(&ch.id) == selected_ch_id.as_ref() {
+            continue;
+        }
+        let bg_graph = graph.clone_for_background();
+        let tx = bg_tx.clone();
+        let tid = team_id.to_string();
+        let ch_id = ch.id.clone();
+        tokio::spawn(async move {
+            if let Ok(msgs) = bg_graph.get_channel_messages(&tid, &ch_id).await {
+                let _ = tx.send(BgResult::ChannelMessages(ch_id, msgs));
+            }
+        });
+    }
+}
+
+async fn load_channel_messages_cached(graph: &client::GraphClient, app: &mut app::App) {
     app.channel_scroll_offset = 0;
     if let (Some(team_id), Some(channel_id)) = (
         app.selected_team_id().map(String::from),
@@ -725,6 +835,7 @@ async fn load_channel_messages(graph: &client::GraphClient, app: &mut app::App) 
     ) {
         match graph.get_channel_messages(&team_id, &channel_id).await {
             Ok(msgs) => {
+                app.channel_message_cache.insert(channel_id, msgs.clone());
                 app.channel_messages = msgs;
                 app.status_message.clear();
             }
@@ -741,7 +852,7 @@ async fn send_channel_message(graph: &client::GraphClient, app: &mut app::App, c
         match graph.send_channel_message(&team_id, &channel_id, content).await {
             Ok(_) => {
                 app.status_message = "Channel message sent".to_string();
-                load_channel_messages(graph, app).await;
+                load_channel_messages_cached(graph, app).await;
             }
             Err(e) => app.status_message = format!("Send failed: {}", e),
         }

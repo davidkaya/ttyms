@@ -836,3 +836,152 @@ mod unread_tracking_tests {
         assert!(!app.detect_new_messages());
     }
 }
+
+#[cfg(test)]
+mod cache_tests {
+    use ttyms::app::App;
+    use ttyms::models::*;
+
+    fn make_team(id: &str, name: &str) -> Team {
+        Team {
+            id: id.to_string(),
+            display_name: name.to_string(),
+            description: None,
+        }
+    }
+
+    fn make_channel(id: &str, name: &str) -> Channel {
+        Channel {
+            id: id.to_string(),
+            display_name: name.to_string(),
+            description: None,
+            membership_type: None,
+        }
+    }
+
+    fn make_message(id: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            message_type: Some("message".to_string()),
+            body: None,
+            from: None,
+            created_date_time: None,
+            reactions: None,
+        }
+    }
+
+    #[test]
+    fn channels_cache_starts_empty() {
+        let app = App::new();
+        assert!(app.channels_cache.is_empty());
+        assert!(app.channel_message_cache.is_empty());
+    }
+
+    #[test]
+    fn show_cached_channels_updates_display() {
+        let mut app = App::new();
+        app.teams = vec![make_team("t1", "Team 1")];
+        app.selected_team = 0;
+
+        let channels = vec![make_channel("c1", "General"), make_channel("c2", "Random")];
+        app.channels_cache.insert("t1".to_string(), channels.clone());
+
+        app.show_cached_channels_for_selected_team();
+        assert_eq!(app.channels.len(), 2);
+        assert_eq!(app.channels[0].display_name, "General");
+        assert_eq!(app.selected_channel, 0);
+    }
+
+    #[test]
+    fn show_cached_channels_clears_when_no_cache() {
+        let mut app = App::new();
+        app.teams = vec![make_team("t1", "Team 1")];
+        app.selected_team = 0;
+        app.channels = vec![make_channel("old", "Old")];
+        app.channel_messages = vec![make_message("m1")];
+
+        // No cache for this team
+        app.show_cached_channels_for_selected_team();
+        assert!(app.channels.is_empty());
+        assert!(app.channel_messages.is_empty());
+    }
+
+    #[test]
+    fn show_cached_messages_updates_display() {
+        let mut app = App::new();
+        app.channels = vec![make_channel("c1", "General")];
+        app.selected_channel = 0;
+
+        let messages = vec![make_message("m1"), make_message("m2")];
+        app.channel_message_cache.insert("c1".to_string(), messages);
+
+        app.show_cached_messages_for_selected_channel();
+        assert_eq!(app.channel_messages.len(), 2);
+        assert_eq!(app.channel_scroll_offset, 0);
+    }
+
+    #[test]
+    fn show_cached_messages_clears_when_no_cache() {
+        let mut app = App::new();
+        app.channels = vec![make_channel("c1", "General")];
+        app.selected_channel = 0;
+        app.channel_messages = vec![make_message("old")];
+
+        // No cache for this channel
+        app.show_cached_messages_for_selected_channel();
+        assert!(app.channel_messages.is_empty());
+    }
+
+    #[test]
+    fn cached_channels_also_show_cached_messages() {
+        let mut app = App::new();
+        app.teams = vec![make_team("t1", "Team 1")];
+        app.selected_team = 0;
+
+        app.channels_cache.insert("t1".to_string(), vec![make_channel("c1", "General")]);
+        app.channel_message_cache.insert("c1".to_string(), vec![make_message("m1")]);
+
+        app.show_cached_channels_for_selected_team();
+        assert_eq!(app.channels.len(), 1);
+        assert_eq!(app.channel_messages.len(), 1);
+        assert_eq!(app.channel_messages[0].id, "m1");
+    }
+
+    #[test]
+    fn navigate_teams_shows_cached_channels() {
+        let mut app = App::new();
+        app.teams = vec![make_team("t1", "Team 1"), make_team("t2", "Team 2")];
+        app.selected_team = 0;
+
+        app.channels_cache.insert("t1".to_string(), vec![make_channel("c1", "General")]);
+        app.channels_cache.insert("t2".to_string(), vec![make_channel("c2", "Dev"), make_channel("c3", "QA")]);
+
+        app.select_next_team();
+        app.show_cached_channels_for_selected_team();
+        assert_eq!(app.channels.len(), 2);
+        assert_eq!(app.channels[0].display_name, "Dev");
+
+        app.select_prev_team();
+        app.show_cached_channels_for_selected_team();
+        assert_eq!(app.channels.len(), 1);
+        assert_eq!(app.channels[0].display_name, "General");
+    }
+
+    #[test]
+    fn navigate_channels_shows_cached_messages() {
+        let mut app = App::new();
+        app.channels = vec![make_channel("c1", "General"), make_channel("c2", "Dev")];
+        app.selected_channel = 0;
+
+        app.channel_message_cache.insert("c1".to_string(), vec![make_message("m1")]);
+        app.channel_message_cache.insert("c2".to_string(), vec![make_message("m2"), make_message("m3")]);
+
+        app.select_next_channel();
+        app.show_cached_messages_for_selected_channel();
+        assert_eq!(app.channel_messages.len(), 2);
+
+        app.select_prev_channel();
+        app.show_cached_messages_for_selected_channel();
+        assert_eq!(app.channel_messages.len(), 1);
+    }
+}

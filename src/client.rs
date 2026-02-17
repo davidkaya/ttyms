@@ -16,6 +16,14 @@ impl GraphClient {
         }
     }
 
+    /// Create an independent copy for background tasks (token is cloned, zeroized on drop)
+    pub fn clone_for_background(&self) -> Self {
+        Self {
+            client: self.client.clone(), // cheap: reqwest::Client is Arc internally
+            access_token: self.access_token.clone(),
+        }
+    }
+
     pub fn set_token(&mut self, token: String) {
         self.access_token.zeroize();
         self.access_token = token;
@@ -210,12 +218,11 @@ impl GraphClient {
         availability: &str,
         activity: &str,
     ) -> Result<()> {
-        let url = "https://graph.microsoft.com/v1.0/me/presence/setPresence";
+        let url = "https://graph.microsoft.com/v1.0/me/presence/setUserPreferredPresence";
         let body = serde_json::json!({
-            "sessionId": crate::config::app_session_id(),
             "availability": availability,
             "activity": activity,
-            "expirationDuration": "PT4H"
+            "expirationDuration": "PT8H"
         });
         self.post_no_content(url, &body).await
     }

@@ -100,6 +100,10 @@ pub struct App {
     pub channel_scroll_offset: usize,
     pub teams_panel: TeamsPanel,
 
+    // Caches for instant navigation
+    pub channels_cache: HashMap<String, Vec<Channel>>,
+    pub channel_message_cache: HashMap<String, Vec<Message>>,
+
     // Unread tracking
     pub total_unread: i32,
     pub known_message_ids: HashSet<String>,
@@ -144,6 +148,8 @@ impl App {
             channel_input_cursor: 0,
             channel_scroll_offset: 0,
             teams_panel: TeamsPanel::TeamList,
+            channels_cache: HashMap::new(),
+            channel_message_cache: HashMap::new(),
             total_unread: 0,
             known_message_ids: HashSet::new(),
         }
@@ -555,5 +561,35 @@ impl App {
         let has_new = new_ids.iter().any(|id| !self.known_message_ids.contains(id));
         self.known_message_ids = new_ids;
         has_new
+    }
+
+    // ---- Cache helpers ----
+
+    /// Show cached channels for the currently selected team (instant, no API call)
+    pub fn show_cached_channels_for_selected_team(&mut self) {
+        if let Some(tid) = self.selected_team_id().map(String::from) {
+            if let Some(cached) = self.channels_cache.get(&tid) {
+                self.channels = cached.clone();
+                self.selected_channel = 0;
+                self.channel_scroll_offset = 0;
+                // Also show cached messages for first channel
+                self.show_cached_messages_for_selected_channel();
+            } else {
+                self.channels.clear();
+                self.channel_messages.clear();
+            }
+        }
+    }
+
+    /// Show cached messages for the currently selected channel (instant)
+    pub fn show_cached_messages_for_selected_channel(&mut self) {
+        if let Some(ch_id) = self.selected_channel_id().map(String::from) {
+            if let Some(cached) = self.channel_message_cache.get(&ch_id) {
+                self.channel_messages = cached.clone();
+                self.channel_scroll_offset = 0;
+            } else {
+                self.channel_messages.clear();
+            }
+        }
     }
 }

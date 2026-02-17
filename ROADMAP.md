@@ -132,7 +132,7 @@ Pin important chats to the top, archive inactive ones.
 - `PATCH /me/chats/{id}` — hide/archive
 
 ### Contact / people list
-Browse your frequent contacts and org directory.
+Browse your frequent contacts and org directory.C:\Users\dvidkaya\AppData\Roaming\ttyms\config.toml.
 - `GET /me/people` — ranked relevant contacts
 - `GET /me/contacts` — address book
 - Scope: `People.Read`
