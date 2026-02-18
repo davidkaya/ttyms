@@ -632,62 +632,82 @@ fn draw_channel_message_area(frame: &mut Frame, app: &App, area: Rect) {
 // ---- Status Bar ----
 
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let max_status_len = (area.width as usize).saturating_sub(70);
-    let status_msg: String = app
-        .status_message
-        .chars()
-        .take(max_status_len)
-        .collect();
+    let key_style = Style::default()
+        .fg(Color::Black)
+        .bg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let sep_style = Style::default().fg(Color::DarkGray);
+    let desc_style = Style::default().fg(Color::White);
 
-    let bar = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " 1/2",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" View │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            "Tab",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" Panel │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            "n",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" New │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            "e",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" React │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            "p",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" Status │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            "q",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" Quit ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            status_msg,
-            Style::default().fg(Color::Yellow),
-        ),
-    ]))
-    .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    let mut spans: Vec<Span> = Vec::new();
+
+    // Helper to add a shortcut
+    let add_shortcut = |key: &str, desc: &str, spans: &mut Vec<Span>| {
+        if !spans.is_empty() {
+            spans.push(Span::styled(" │ ", sep_style));
+        }
+        spans.push(Span::styled(format!(" {} ", key), key_style));
+        spans.push(Span::styled(format!(" {}", desc), desc_style));
+    };
+
+    // Context-aware shortcuts
+    match app.view_mode {
+        ViewMode::Chats => {
+            add_shortcut("1/2", "Switch View", &mut spans);
+            add_shortcut("Tab", "Switch Panel", &mut spans);
+            match app.active_panel {
+                Panel::ChatList => {
+                    add_shortcut("n", "New Chat", &mut spans);
+                    add_shortcut("r", "Refresh", &mut spans);
+                }
+                Panel::Messages => {
+                    add_shortcut("s", "Select Message", &mut spans);
+                    add_shortcut("e", "Add Reaction", &mut spans);
+                    add_shortcut("r", "Refresh", &mut spans);
+                }
+                Panel::Input => {}
+            }
+            add_shortcut("p", "Set Status", &mut spans);
+            add_shortcut("q", "Quit", &mut spans);
+        }
+        ViewMode::Teams => {
+            add_shortcut("1/2", "Switch View", &mut spans);
+            match app.teams_panel {
+                TeamsPanel::TeamList => {
+                    add_shortcut("Enter", "Open Team", &mut spans);
+                    add_shortcut("r", "Refresh", &mut spans);
+                }
+                TeamsPanel::ChannelList => {
+                    add_shortcut("Enter", "Open Channel", &mut spans);
+                    add_shortcut("Esc", "Back", &mut spans);
+                }
+                TeamsPanel::ChannelMessages => {
+                    add_shortcut("Enter", "Write Message", &mut spans);
+                    add_shortcut("r", "Refresh", &mut spans);
+                    add_shortcut("Esc", "Back", &mut spans);
+                }
+                TeamsPanel::ChannelInput => {
+                    add_shortcut("Enter", "Send", &mut spans);
+                    add_shortcut("Esc", "Back", &mut spans);
+                }
+            }
+            add_shortcut("p", "Set Status", &mut spans);
+            add_shortcut("q", "Quit", &mut spans);
+        }
+    }
+
+    // Append status message if any
+    let max_status_len = (area.width as usize).saturating_sub(
+        spans.iter().map(|s| s.content.len()).sum::<usize>() + 4,
+    );
+    if !app.status_message.is_empty() && max_status_len > 5 {
+        spans.push(Span::styled(" │ ", sep_style));
+        let status_msg: String = app.status_message.chars().take(max_status_len).collect();
+        spans.push(Span::styled(status_msg, Style::default().fg(Color::Yellow)));
+    }
+
+    let bar = Paragraph::new(Line::from(spans))
+        .style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_widget(bar, area);
 }
 

@@ -170,7 +170,7 @@ impl GraphClient {
         reaction_type: &str,
     ) -> Result<()> {
         let url = format!(
-            "https://graph.microsoft.com/v1.0/me/chats/{}/messages/{}/setReaction",
+            "https://graph.microsoft.com/v1.0/chats/{}/messages/{}/setReaction",
             chat_id, message_id
         );
         let body = serde_json::json!({ "reactionType": reaction_type });
@@ -185,7 +185,7 @@ impl GraphClient {
         reaction_type: &str,
     ) -> Result<()> {
         let url = format!(
-            "https://graph.microsoft.com/v1.0/me/chats/{}/messages/{}/unsetReaction",
+            "https://graph.microsoft.com/v1.0/chats/{}/messages/{}/unsetReaction",
             chat_id, message_id
         );
         let body = serde_json::json!({ "reactionType": reaction_type });
