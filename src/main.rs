@@ -16,6 +16,66 @@ use std::io;
 
 use app::{AppScreen, DialogMode, Panel, TeamsPanel, ViewMode};
 
+/// Simple base64 encoder for OSC 52 clipboard (no external dep needed)
+fn base64_encode(input: &str) -> String {
+    use std::io::Write;
+    let mut buf = Vec::new();
+    {
+        let mut enc = Base64Writer::new(&mut buf);
+        enc.write_all(input.as_bytes()).unwrap();
+        enc.finish();
+    }
+    String::from_utf8(buf).unwrap()
+}
+
+struct Base64Writer<'a> {
+    out: &'a mut Vec<u8>,
+    buf: [u8; 3],
+    pos: usize,
+}
+
+impl<'a> Base64Writer<'a> {
+    fn new(out: &'a mut Vec<u8>) -> Self {
+        Self { out, buf: [0; 3], pos: 0 }
+    }
+    fn finish(self) {
+        const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        if self.pos == 1 {
+            let b0 = self.buf[0];
+            self.out.push(CHARS[(b0 >> 2) as usize]);
+            self.out.push(CHARS[((b0 & 0x03) << 4) as usize]);
+            self.out.push(b'=');
+            self.out.push(b'=');
+        } else if self.pos == 2 {
+            let (b0, b1) = (self.buf[0], self.buf[1]);
+            self.out.push(CHARS[(b0 >> 2) as usize]);
+            self.out.push(CHARS[((b0 & 0x03) << 4 | b1 >> 4) as usize]);
+            self.out.push(CHARS[((b1 & 0x0f) << 2) as usize]);
+            self.out.push(b'=');
+        }
+    }
+}
+
+impl<'a> std::io::Write for Base64Writer<'a> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for &byte in data {
+            self.buf[self.pos] = byte;
+            self.pos += 1;
+            if self.pos == 3 {
+                let (b0, b1, b2) = (self.buf[0], self.buf[1], self.buf[2]);
+                self.out.push(CHARS[(b0 >> 2) as usize]);
+                self.out.push(CHARS[((b0 & 0x03) << 4 | b1 >> 4) as usize]);
+                self.out.push(CHARS[((b1 & 0x0f) << 2 | b2 >> 6) as usize]);
+                self.out.push(CHARS[(b2 & 0x3f) as usize]);
+                self.pos = 0;
+            }
+        }
+        Ok(data.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
+
 // Background task results delivered via channel
 enum BgResult {
     Channels(String, Vec<models::Channel>),
@@ -39,7 +99,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let config = match config::load_config() {
+    let mut config = match config::load_config() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Error: {}\n", e);
@@ -47,6 +107,16 @@ async fn main() -> Result<()> {
             return Ok(());
         }
     };
+
+    // CLI override for client_id
+    if let Some(pos) = args.iter().position(|a| a == "--client-id") {
+        if let Some(id) = args.get(pos + 1) {
+            config.client_id = id.clone();
+        } else {
+            eprintln!("Error: --client-id requires a value");
+            return Ok(());
+        }
+    }
 
     let http_client = reqwest::Client::new();
     let use_pkce = args.iter().any(|a| a == "--pkce");
@@ -215,7 +285,7 @@ async fn run_app(
                 }
 
                 // Dialog mode intercepts all keys
-                match app.dialog {
+                match &app.dialog {
                     DialogMode::NewChat => {
                         handle_new_chat_keys(&mut app, &graph, key.code).await;
                         continue;
@@ -226,6 +296,26 @@ async fn run_app(
                     }
                     DialogMode::PresencePicker => {
                         handle_presence_picker_keys(&mut app, &graph, key.code).await;
+                        continue;
+                    }
+                    DialogMode::Error(info) => {
+                        match key.code {
+                            KeyCode::Char('c') | KeyCode::Char('C') => {
+                                // Copy troubleshooting info to clipboard via OSC 52
+                                let clip = format!(
+                                    "{}\n\n{}\n\nDetails:\n{}",
+                                    info.title, info.message, info.details
+                                );
+                                let b64 = base64_encode(&clip);
+                                print!("\x1b]52;c;{}\x07", b64);
+                                app.status_message = "Troubleshooting info copied to clipboard".to_string();
+                                app.close_dialog();
+                            }
+                            KeyCode::Esc | KeyCode::Enter => {
+                                app.close_dialog();
+                            }
+                            _ => {}
+                        }
                         continue;
                     }
                     DialogMode::None => {}
@@ -562,16 +652,22 @@ async fn handle_reaction_picker_keys(
                 app.selected_chat_id().map(String::from),
                 app.selected_message_id().map(String::from),
             ) {
-                let (reaction_type, _) = models::REACTION_TYPES[app.selected_reaction];
+                let (reaction_type, label) = models::REACTION_TYPES[app.selected_reaction];
                 match graph.set_reaction(&chat_id, &msg_id, reaction_type).await {
                     Ok(_) => {
-                        app.status_message = format!("Reacted with {}", models::REACTION_TYPES[app.selected_reaction].1);
+                        app.status_message = format!("Reacted with {}", label);
                         app.close_dialog();
                         load_messages(graph, app).await;
                     }
                     Err(e) => {
-                        app.status_message = format!("React failed: {}", e);
-                        app.close_dialog();
+                        app.show_error(
+                            "Reaction Failed",
+                            &format!("Could not add {} reaction to this message.", label),
+                            &format!(
+                                "Chat: {}\nMessage: {}\nReaction: {} ({})\nError: {}",
+                                chat_id, msg_id, label, reaction_type, e
+                            ),
+                        );
                     }
                 }
             } else {
@@ -612,12 +708,19 @@ async fn handle_presence_picker_keys(
                 Ok(_) => {
                     app.my_presence = availability.to_string();
                     app.status_message = format!("Status set to {}", availability);
+                    app.close_dialog();
                 }
                 Err(e) => {
-                    app.status_message = format!("Set status failed: {}", e);
+                    app.show_error(
+                        "Set Status Failed",
+                        &format!("Could not set your presence to {}.", availability),
+                        &format!(
+                            "Availability: {}\nActivity: {}\nEndpoint: setUserPreferredPresence\nError: {}",
+                            availability, activity, e
+                        ),
+                    );
                 }
             }
-            app.close_dialog();
         }
         _ => {}
     }
@@ -650,7 +753,13 @@ async fn send_message(graph: &client::GraphClient, app: &mut app::App, content: 
                 app.status_message = "Message sent".to_string();
                 load_messages(graph, app).await;
             }
-            Err(e) => app.status_message = format!("Send failed: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Send Failed",
+                    "Could not send your message.",
+                    &format!("Chat: {}\nError: {}", chat_id, e),
+                );
+            }
         }
     }
 }
@@ -677,7 +786,13 @@ async fn create_new_chat(graph: &client::GraphClient, app: &mut app::App, email:
                 }
             }
         }
-        Err(e) => app.status_message = format!("Failed: {}", e),
+        Err(e) => {
+            app.show_error(
+                "Create Chat Failed",
+                &format!("Could not create a chat with {}.", email),
+                &format!("Recipient: {}\nError: {}", email, e),
+            );
+        }
     }
 }
 
@@ -877,11 +992,15 @@ fn print_help() {
     println!("USAGE: ttyms [OPTIONS]");
     println!();
     println!("OPTIONS:");
-    println!("  --pkce      Use PKCE browser flow instead of device code flow");
-    println!("  --logout    Clear stored credentials securely");
-    println!("  --help, -h  Show this help");
+    println!("  --pkce              Use PKCE browser flow instead of device code flow");
+    println!("  --client-id <ID>    Override the Azure AD client ID");
+    println!("  --logout            Clear stored credentials securely");
+    println!("  --help, -h          Show this help");
     println!();
     println!("AUTHENTICATION:");
+    println!("  Default client ID: {}", config::DEFAULT_CLIENT_ID);
+    println!("  Override via --client-id or set client_id in config.toml.");
+    println!();
     println!("  Default: Device Code Flow — a code is displayed, you sign in via browser.");
     println!("  --pkce:  PKCE Flow — browser opens automatically, redirects to localhost.");
     println!();

@@ -109,10 +109,11 @@ fn draw_main(frame: &mut Frame, app: &App) {
     draw_status_bar(frame, app, chunks[2]);
 
     // Draw dialogs on top
-    match app.dialog {
+    match &app.dialog {
         DialogMode::NewChat => draw_new_chat_dialog(frame, app),
         DialogMode::ReactionPicker => draw_reaction_picker(frame, app),
         DialogMode::PresencePicker => draw_presence_picker(frame, app),
+        DialogMode::Error(info) => draw_error_dialog(frame, info),
         DialogMode::None => {}
     }
 }
@@ -884,6 +885,66 @@ fn draw_presence_picker(frame: &mut Frame, app: &App) {
 
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
+}
+
+fn draw_error_dialog(frame: &mut Frame, info: &crate::app::ErrorInfo) {
+    let area = frame.size();
+
+    // Calculate height based on content
+    let detail_lines: Vec<&str> = info.details.lines().collect();
+    let dialog_height = (6 + detail_lines.len() as u16).min(area.height.saturating_sub(4));
+    let popup = centered_rect(70, dialog_height, area);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(format!(" ⚠ {} ", info.title))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2), // message
+            Constraint::Min(1),   // details
+            Constraint::Length(1), // footer
+        ])
+        .split(inner);
+
+    // Error message
+    let msg = Paragraph::new(info.message.as_str())
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(msg, chunks[0]);
+
+    // Troubleshooting details
+    let details = Paragraph::new(info.details.as_str())
+        .style(Style::default().fg(Color::DarkGray))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(details, chunks[1]);
+
+    // Footer with actions
+    let footer = Line::from(vec![
+        Span::styled(
+            " C ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" Copy troubleshooting info  ", Style::default().fg(Color::White)),
+        Span::styled(
+            " Esc ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" Close", Style::default().fg(Color::White)),
+    ]);
+    frame.render_widget(Paragraph::new(footer), chunks[2]);
 }
 
 fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {

@@ -268,13 +268,15 @@ pub fn presence_indicator(availability: &str) -> (&str, &str) {
 }
 
 /// Available reaction types for the reaction picker
+/// Reaction types: (emoji_to_send, display_label)
+/// The Graph API setReaction expects unicode emoji as reactionType
 pub const REACTION_TYPES: &[(&str, &str)] = &[
-    ("like", "👍"),
-    ("heart", "❤️"),
-    ("laugh", "😂"),
-    ("surprised", "😮"),
-    ("sad", "😢"),
-    ("angry", "😡"),
+    ("👍", "👍 Like"),
+    ("❤️", "❤️ Heart"),
+    ("😂", "😂 Laugh"),
+    ("😮", "😮 Surprised"),
+    ("😢", "😢 Sad"),
+    ("😡", "😡 Angry"),
 ];
 
 /// Available presence statuses

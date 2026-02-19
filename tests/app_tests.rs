@@ -726,6 +726,28 @@ mod dialog_tests {
         app.close_dialog();
         assert_eq!(app.dialog, DialogMode::None);
     }
+
+    #[test]
+    fn show_error_opens_error_dialog() {
+        let mut app = App::new();
+        app.show_error("Test Error", "Something went wrong", "Detail: xyz");
+        match &app.dialog {
+            DialogMode::Error(info) => {
+                assert_eq!(info.title, "Test Error");
+                assert_eq!(info.message, "Something went wrong");
+                assert_eq!(info.details, "Detail: xyz");
+            }
+            _ => panic!("Expected Error dialog"),
+        }
+    }
+
+    #[test]
+    fn close_error_dialog() {
+        let mut app = App::new();
+        app.show_error("Err", "msg", "details");
+        app.close_dialog();
+        assert_eq!(app.dialog, DialogMode::None);
+    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,9 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Default Azure AD client ID for ttyms
+pub const DEFAULT_CLIENT_ID: &str = "ac138a64-055b-4915-b670-31200c6235e6";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub client_id: String,
@@ -19,26 +22,26 @@ pub fn config_dir() -> Result<PathBuf> {
 pub fn load_config() -> Result<Config> {
     let path = config_dir()?.join("config.toml");
     if !path.exists() {
-        let template = r#"# ttyms Configuration
+        let template = format!(
+            r#"# ttyms Configuration
 # Tokens are stored securely in your OS credential manager.
 # This file contains non-sensitive settings only.
 
-# Azure AD Application (client) ID (required)
+# Azure AD Application (client) ID
+# Leave empty to use the built-in default: {}
 client_id = ""
 
 # Azure AD Tenant ID ("common" for multi-tenant, or your specific tenant ID)
 tenant_id = "common"
-"#;
-        std::fs::write(&path, template)?;
-        anyhow::bail!(
-            "Config created at {}. Please set your client_id.",
-            path.display()
+"#,
+            DEFAULT_CLIENT_ID
         );
+        std::fs::write(&path, template)?;
     }
     let content = std::fs::read_to_string(&path)?;
-    let config: Config = toml::from_str(&content).context("Invalid config file format")?;
+    let mut config: Config = toml::from_str(&content).context("Invalid config file format")?;
     if config.client_id.is_empty() {
-        anyhow::bail!("Please set client_id in {}", path.display());
+        config.client_id = DEFAULT_CLIENT_ID.to_string();
     }
     Ok(config)
 }

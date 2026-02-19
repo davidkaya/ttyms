@@ -44,6 +44,14 @@ pub enum DialogMode {
     NewChat,
     ReactionPicker,
     PresencePicker,
+    Error(ErrorInfo),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ErrorInfo {
+    pub title: String,
+    pub message: String,
+    pub details: String,
 }
 
 pub struct App {
@@ -402,6 +410,14 @@ impl App {
 
     pub fn close_dialog(&mut self) {
         self.dialog = DialogMode::None;
+    }
+
+    pub fn show_error(&mut self, title: &str, message: &str, details: &str) {
+        self.dialog = DialogMode::Error(ErrorInfo {
+            title: title.to_string(),
+            message: message.to_string(),
+            details: details.to_string(),
+        });
     }
 
     // ---- Presence picker ----
