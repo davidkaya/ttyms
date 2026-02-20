@@ -543,11 +543,39 @@ async fn handle_teams_keys(
             KeyCode::Char('q') => std::process::exit(0),
             KeyCode::Tab => app.next_teams_panel(),
             KeyCode::BackTab => app.prev_teams_panel(),
-            KeyCode::Up | KeyCode::Char('k') => app.channel_scroll_up(),
-            KeyCode::Down | KeyCode::Char('j') => app.channel_scroll_down(),
+            KeyCode::Up | KeyCode::Char('k') => {
+                if app.selected_channel_message.is_some() {
+                    app.select_channel_message_up();
+                } else {
+                    app.channel_scroll_up();
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if app.selected_channel_message.is_some() {
+                    app.select_channel_message_down();
+                } else {
+                    app.channel_scroll_down();
+                }
+            }
+            KeyCode::Char('s') => {
+                if app.selected_channel_message.is_some() {
+                    app.selected_channel_message = None;
+                } else {
+                    app.select_channel_message_up();
+                }
+            }
+            KeyCode::Char('e') => {
+                app.open_reaction_picker();
+            }
             KeyCode::Char('r') => load_channel_messages_cached(graph, app).await,
             KeyCode::Enter => app.teams_panel = TeamsPanel::ChannelInput,
-            KeyCode::Esc => app.teams_panel = TeamsPanel::ChannelList,
+            KeyCode::Esc => {
+                if app.selected_channel_message.is_some() {
+                    app.selected_channel_message = None;
+                } else {
+                    app.teams_panel = TeamsPanel::ChannelList;
+                }
+            }
             _ => {}
         },
         TeamsPanel::ChannelInput => match code {
@@ -648,30 +676,65 @@ async fn handle_reaction_picker_keys(
             app.selected_reaction = (app.selected_reaction + 1).min(max);
         }
         KeyCode::Enter => {
-            if let (Some(chat_id), Some(msg_id)) = (
-                app.selected_chat_id().map(String::from),
-                app.selected_message_id().map(String::from),
-            ) {
-                let (reaction_type, label) = models::REACTION_TYPES[app.selected_reaction];
-                match graph.set_reaction(&chat_id, &msg_id, reaction_type).await {
-                    Ok(_) => {
-                        app.status_message = format!("Reacted with {}", label);
+            let (reaction_type, label) = models::REACTION_TYPES[app.selected_reaction];
+
+            match app.view_mode {
+                ViewMode::Chats => {
+                    if let (Some(chat_id), Some(msg_id)) = (
+                        app.selected_chat_id().map(String::from),
+                        app.selected_message_id().map(String::from),
+                    ) {
+                        match graph.set_reaction(&chat_id, &msg_id, reaction_type).await {
+                            Ok(_) => {
+                                app.status_message = format!("Reacted with {}", label);
+                                app.close_dialog();
+                                load_messages(graph, app).await;
+                            }
+                            Err(e) => {
+                                app.show_error(
+                                    "Reaction Failed",
+                                    &format!("Could not add {} reaction.", label),
+                                    &format!(
+                                        "Chat: {}\nMessage: {}\nReaction: {}\nError: {}",
+                                        chat_id, msg_id, label, e
+                                    ),
+                                );
+                            }
+                        }
+                    } else {
                         app.close_dialog();
-                        load_messages(graph, app).await;
-                    }
-                    Err(e) => {
-                        app.show_error(
-                            "Reaction Failed",
-                            &format!("Could not add {} reaction to this message.", label),
-                            &format!(
-                                "Chat: {}\nMessage: {}\nReaction: {} ({})\nError: {}",
-                                chat_id, msg_id, label, reaction_type, e
-                            ),
-                        );
                     }
                 }
-            } else {
-                app.close_dialog();
+                ViewMode::Teams => {
+                    if let (Some(team_id), Some(channel_id), Some(msg_id)) = (
+                        app.selected_team_id().map(String::from),
+                        app.selected_channel_id().map(String::from),
+                        app.selected_channel_message_id().map(String::from),
+                    ) {
+                        match graph
+                            .set_channel_reaction(&team_id, &channel_id, &msg_id, reaction_type)
+                            .await
+                        {
+                            Ok(_) => {
+                                app.status_message = format!("Reacted with {}", label);
+                                app.close_dialog();
+                                load_channel_messages_cached(graph, app).await;
+                            }
+                            Err(e) => {
+                                app.show_error(
+                                    "Reaction Failed",
+                                    &format!("Could not add {} reaction.", label),
+                                    &format!(
+                                        "Team: {}\nChannel: {}\nMessage: {}\nReaction: {}\nError: {}",
+                                        team_id, channel_id, msg_id, label, e
+                                    ),
+                                );
+                            }
+                        }
+                    } else {
+                        app.close_dialog();
+                    }
+                }
             }
         }
         _ => {}

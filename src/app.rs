@@ -90,6 +90,7 @@ pub struct App {
 
     // Message selection (for reactions)
     pub selected_message: Option<usize>,
+    pub selected_channel_message: Option<usize>,
     pub selected_reaction: usize,
 
     // Presence
@@ -143,6 +144,7 @@ impl App {
             last_search_query: String::new(),
             dialog: DialogMode::None,
             selected_message: None,
+            selected_channel_message: None,
             selected_reaction: 0,
             my_presence: "PresenceUnknown".to_string(),
             presence_map: HashMap::new(),
@@ -399,10 +401,70 @@ impl App {
             .map(|m| m.id.as_str())
     }
 
+    // ---- Channel message selection (for reactions in teams view) ----
+
+    pub fn select_channel_message_up(&mut self) {
+        let msgs: Vec<usize> = self
+            .channel_messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.is_user_message())
+            .map(|(i, _)| i)
+            .collect();
+        if msgs.is_empty() {
+            return;
+        }
+        match self.selected_channel_message {
+            None => self.selected_channel_message = msgs.last().copied(),
+            Some(cur) => {
+                if let Some(pos) = msgs.iter().position(|&i| i == cur) {
+                    if pos > 0 {
+                        self.selected_channel_message = Some(msgs[pos - 1]);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn select_channel_message_down(&mut self) {
+        let msgs: Vec<usize> = self
+            .channel_messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.is_user_message())
+            .map(|(i, _)| i)
+            .collect();
+        if msgs.is_empty() {
+            return;
+        }
+        match self.selected_channel_message {
+            None => return,
+            Some(cur) => {
+                if let Some(pos) = msgs.iter().position(|&i| i == cur) {
+                    if pos + 1 < msgs.len() {
+                        self.selected_channel_message = Some(msgs[pos + 1]);
+                    } else {
+                        self.selected_channel_message = None;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn selected_channel_message_id(&self) -> Option<&str> {
+        self.selected_channel_message
+            .and_then(|idx| self.channel_messages.get(idx))
+            .map(|m| m.id.as_str())
+    }
+
     // ---- Reaction picker ----
 
     pub fn open_reaction_picker(&mut self) {
-        if self.selected_message.is_some() {
+        let has_selection = match self.view_mode {
+            ViewMode::Chats => self.selected_message.is_some(),
+            ViewMode::Teams => self.selected_channel_message.is_some(),
+        };
+        if has_selection {
             self.dialog = DialogMode::ReactionPicker;
             self.selected_reaction = 0;
         }

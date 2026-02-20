@@ -177,6 +177,21 @@ impl GraphClient {
         self.post_no_content(&url, &body).await
     }
 
+    pub async fn set_channel_reaction(
+        &self,
+        team_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        reaction_type: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/teams/{}/channels/{}/messages/{}/setReaction",
+            team_id, channel_id, message_id
+        );
+        let body = serde_json::json!({ "reactionType": reaction_type });
+        self.post_no_content(&url, &body).await
+    }
+
     #[allow(dead_code)]
     pub async fn unset_reaction(
         &self,

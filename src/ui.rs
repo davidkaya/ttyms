@@ -621,7 +621,8 @@ fn draw_channel_message_area(frame: &mut Frame, app: &App, area: Rect) {
 
     let title = app.selected_channel_name();
     draw_messages(
-        frame, app, &app.channel_messages, app.channel_scroll_offset, None,
+        frame, app, &app.channel_messages, app.channel_scroll_offset,
+        app.selected_channel_message,
         &title, app.teams_panel == TeamsPanel::ChannelMessages, chunks[0],
     );
     draw_input_box(
@@ -683,6 +684,8 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     add_shortcut("Esc", "Back", &mut spans);
                 }
                 TeamsPanel::ChannelMessages => {
+                    add_shortcut("s", "Select Message", &mut spans);
+                    add_shortcut("e", "Add Reaction", &mut spans);
                     add_shortcut("Enter", "Write Message", &mut spans);
                     add_shortcut("r", "Refresh", &mut spans);
                     add_shortcut("Esc", "Back", &mut spans);
