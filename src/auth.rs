@@ -64,9 +64,8 @@ struct TokenError {
     error_description: Option<String>,
 }
 
-fn keyring_entry(name: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(KEYRING_SERVICE, name)
-        .map_err(|e| anyhow::anyhow!("Cannot access OS credential store: {}", e))
+fn keyring_entry(name: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, name).ok()
 }
 
 fn token_file_path() -> Result<std::path::PathBuf> {
@@ -75,22 +74,26 @@ fn token_file_path() -> Result<std::path::PathBuf> {
 
 fn store_token(token: &TokenResponse) -> Result<()> {
     // Try keyring with split entries (each under Windows 2560 char limit)
-    if store_token_keyring(token).is_ok() {
+    if store_token_keyring(token) {
         return Ok(());
     }
     // Fall back to file in config dir (protected by OS user permissions)
     store_token_file(token)
 }
 
-fn store_token_keyring(token: &TokenResponse) -> Result<()> {
-    keyring_entry("at")?.set_password(&token.access_token)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-    keyring_entry("rt")?.set_password(token.refresh_token.as_deref().unwrap_or(""))
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+fn store_token_keyring(token: &TokenResponse) -> bool {
+    let Some(at_entry) = keyring_entry("at") else { return false };
+    let Some(rt_entry) = keyring_entry("rt") else { return false };
+    let Some(meta_entry) = keyring_entry("meta") else { return false };
+
+    if at_entry.set_password(&token.access_token).is_err() {
+        return false;
+    }
+    if rt_entry.set_password(token.refresh_token.as_deref().unwrap_or("")).is_err() {
+        return false;
+    }
     let meta = format!("{},{}", token.expires_in, token.obtained_at);
-    keyring_entry("meta")?.set_password(&meta)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-    Ok(())
+    meta_entry.set_password(&meta).is_ok()
 }
 
 fn store_token_file(token: &TokenResponse) -> Result<()> {
@@ -102,36 +105,34 @@ fn store_token_file(token: &TokenResponse) -> Result<()> {
 }
 
 fn load_cached_token() -> Result<Option<TokenResponse>> {
-    // Try keyring first (split entries)
-    if let Some(token) = load_token_keyring()? {
+    // Try keyring first (split entries), silently fall through on any error
+    if let Some(token) = load_token_keyring() {
         return Ok(Some(token));
     }
     // Fall back to file
     load_token_file()
 }
 
-fn load_token_keyring() -> Result<Option<TokenResponse>> {
-    let access_token = match keyring_entry("at")?.get_password() {
-        Ok(t) if !t.is_empty() => t,
-        Ok(_) | Err(keyring::Error::NoEntry) => return Ok(None),
-        Err(e) => return Err(anyhow::anyhow!("Credential read error: {}", e)),
-    };
-    let refresh_token = keyring_entry("rt")?
-        .get_password()
-        .ok()
+fn load_token_keyring() -> Option<TokenResponse> {
+    let at_entry = keyring_entry("at")?;
+    let access_token = at_entry.get_password().ok().filter(|s| !s.is_empty())?;
+    let refresh_token = keyring_entry("rt")
+        .and_then(|e| e.get_password().ok())
         .filter(|s| !s.is_empty());
-    let meta = keyring_entry("meta")?.get_password().unwrap_or_default();
+    let meta = keyring_entry("meta")
+        .and_then(|e| e.get_password().ok())
+        .unwrap_or_default();
     let mut parts = meta.split(',');
     let expires_in = parts.next().and_then(|s| s.parse().ok()).unwrap_or(3600);
     let obtained_at = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
 
-    Ok(Some(TokenResponse {
+    Some(TokenResponse {
         access_token,
         refresh_token,
         expires_in,
         token_type: "Bearer".to_string(),
         obtained_at,
-    }))
+    })
 }
 
 fn load_token_file() -> Result<Option<TokenResponse>> {
@@ -151,12 +152,12 @@ fn load_token_file() -> Result<Option<TokenResponse>> {
 pub fn clear_stored_tokens() -> Result<()> {
     // Clear keyring entries
     for key in ["at", "rt", "meta"] {
-        if let Ok(entry) = keyring_entry(key) {
+        if let Some(entry) = keyring_entry(key) {
             let _ = entry.delete_password();
         }
     }
     // Clear legacy single entry
-    if let Ok(entry) = keyring_entry(KEYRING_USER) {
+    if let Some(entry) = keyring_entry(KEYRING_USER) {
         let _ = entry.delete_password();
     }
     // Clear file fallback
