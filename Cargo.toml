@@ -3,6 +3,10 @@ name = "ttyms"
 version = "0.1.0"
 edition = "2021"
 description = "A secure terminal client for Microsoft Teams"
+license = "MIT"
+repository = "https://github.com/davidkaya/ttyms"
+homepage = "https://github.com/davidkaya/ttyms"
+authors = ["David Kaya <david@kaya.sk>"]
 
 [dependencies]
 ratatui = "0.26"

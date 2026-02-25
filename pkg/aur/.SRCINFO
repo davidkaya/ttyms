@@ -1,0 +1,22 @@
+pkgbase = ttyms-git
+	pkgdesc = A secure terminal client for Microsoft Teams
+	pkgver = 0.1.0.r0.g0000000
+	pkgrel = 1
+	url = https://github.com/davidkaya/ttyms
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = rust
+	makedepends = cargo
+	makedepends = git
+	makedepends = pkg-config
+	depends = gcc-libs
+	depends = openssl
+	depends = dbus
+	depends = libsecret
+	provides = ttyms
+	conflicts = ttyms
+	source = ttyms-git::git+https://github.com/davidkaya/ttyms.git
+	sha256sums = SKIP
+
+pkgname = ttyms-git
