@@ -20,7 +20,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - run: cargo test --verbose
 
-  publish:
+  publish-crates:
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -33,3 +33,70 @@ jobs:
         run: cargo publish --dry-run
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-aur:
+    needs: publish-crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate PKGBUILD
+        run: |
+          cat > PKGBUILD << 'PKGEOF'
+          # Maintainer: David Kaya <david@kaya.sk>
+          pkgname=ttyms
+          pkgver=${{ steps.version.outputs.version }}
+          pkgrel=1
+          pkgdesc="A secure terminal client for Microsoft Teams"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/davidkaya/ttyms"
+          license=('MIT')
+          depends=('gcc-libs' 'openssl' 'dbus' 'libsecret')
+          makedepends=('rust' 'cargo' 'pkg-config')
+          conflicts=('ttyms-git')
+          source=("$pkgname-$pkgver.tar.gz::https://static.crates.io/crates/$pkgname/$pkgname-$pkgver.crate")
+          sha256sums=('SKIP')
+
+          prepare() {
+            cd "$pkgname-$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+          }
+
+          build() {
+            cd "$pkgname-$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            export CARGO_TARGET_DIR=target
+            cargo build --frozen --release
+          }
+
+          check() {
+            cd "$pkgname-$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            export CARGO_TARGET_DIR=target
+            cargo test --frozen
+          }
+
+          package() {
+            cd "$pkgname-$pkgver"
+            install -Dm755 "target/release/ttyms" "$pkgdir/usr/bin/ttyms"
+            install -Dm644 LICENSE "$pkgdir/usr/share/licenses/ttyms/LICENSE"
+            install -Dm644 README.md "$pkgdir/usr/share/doc/ttyms/README.md"
+          }
+          PKGEOF
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        with:
+          pkgname: ttyms
+          pkgbuild: ./PKGBUILD
+          commit_username: David Kaya
+          commit_email: david@kaya.sk
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ steps.version.outputs.version }}"
