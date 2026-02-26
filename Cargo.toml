@@ -7,6 +7,10 @@ license = "MIT"
 repository = "https://github.com/davidkaya/ttyms"
 homepage = "https://github.com/davidkaya/ttyms"
 authors = ["David Kaya <david@kaya.sk>"]
+readme = "README.md"
+keywords = ["teams", "microsoft", "terminal", "tui", "chat"]
+categories = ["command-line-utilities"]
+exclude = ["pkg/", "tests/", ".github/", "target/"]
 
 [dependencies]
 ratatui = "0.26"
