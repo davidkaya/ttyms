@@ -1007,3 +1007,229 @@ mod cache_tests {
         assert_eq!(app.channel_messages.len(), 1);
     }
 }
+
+#[cfg(test)]
+mod reply_tests {
+    use ttyms::app::{App, Panel};
+    use ttyms::models::*;
+
+    fn make_messages_with_senders() -> Vec<Message> {
+        vec![
+            Message {
+                id: "msg1".to_string(),
+                message_type: Some("message".to_string()),
+                body: Some(MessageBody { content: Some("Hello world".to_string()), content_type: None }),
+                from: Some(MessageFrom {
+                    user: Some(MessageUser {
+                        display_name: Some("Alice".to_string()),
+                        id: Some("alice-id".to_string()),
+                    }),
+                }),
+                created_date_time: None,
+                reactions: None,
+            },
+            Message {
+                id: "msg2".to_string(),
+                message_type: Some("message".to_string()),
+                body: Some(MessageBody { content: Some("How are you?".to_string()), content_type: None }),
+                from: Some(MessageFrom {
+                    user: Some(MessageUser {
+                        display_name: Some("Me".to_string()),
+                        id: Some("my-id".to_string()),
+                    }),
+                }),
+                created_date_time: None,
+                reactions: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn start_reply_sets_context() {
+        let mut app = App::new();
+        app.messages = make_messages_with_senders();
+        app.selected_message = Some(0);
+        app.start_reply();
+        assert!(app.is_replying());
+        assert_eq!(app.reply_to_message_id, Some("msg1".to_string()));
+        assert!(app.reply_to_preview.contains("Alice"));
+        assert_eq!(app.active_panel, Panel::Input);
+        assert!(app.selected_message.is_none());
+    }
+
+    #[test]
+    fn cancel_reply_clears_context() {
+        let mut app = App::new();
+        app.messages = make_messages_with_senders();
+        app.selected_message = Some(0);
+        app.start_reply();
+        assert!(app.is_replying());
+        app.cancel_reply();
+        assert!(!app.is_replying());
+        assert!(app.reply_to_message_id.is_none());
+        assert!(app.reply_to_preview.is_empty());
+    }
+
+    #[test]
+    fn start_reply_noop_when_no_selection() {
+        let mut app = App::new();
+        app.messages = make_messages_with_senders();
+        app.start_reply();
+        assert!(!app.is_replying());
+    }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use ttyms::app::{App, Panel};
+    use ttyms::models::*;
+
+    fn setup_app_with_own_message() -> App {
+        let mut app = App::new();
+        app.current_user = Some(User {
+            id: "my-id".to_string(),
+            display_name: "Me".to_string(),
+            mail: None,
+            user_principal_name: None,
+        });
+        app.messages = vec![
+            Message {
+                id: "msg1".to_string(),
+                message_type: Some("message".to_string()),
+                body: Some(MessageBody { content: Some("Other's message".to_string()), content_type: None }),
+                from: Some(MessageFrom {
+                    user: Some(MessageUser {
+                        display_name: Some("Alice".to_string()),
+                        id: Some("alice-id".to_string()),
+                    }),
+                }),
+                created_date_time: None,
+                reactions: None,
+            },
+            Message {
+                id: "msg2".to_string(),
+                message_type: Some("message".to_string()),
+                body: Some(MessageBody { content: Some("My message".to_string()), content_type: None }),
+                from: Some(MessageFrom {
+                    user: Some(MessageUser {
+                        display_name: Some("Me".to_string()),
+                        id: Some("my-id".to_string()),
+                    }),
+                }),
+                created_date_time: None,
+                reactions: None,
+            },
+        ];
+        app
+    }
+
+    #[test]
+    fn start_edit_on_own_message() {
+        let mut app = setup_app_with_own_message();
+        app.selected_message = Some(1); // own message
+        app.start_edit();
+        assert!(app.is_editing());
+        assert_eq!(app.editing_message_id, Some("msg2".to_string()));
+        assert_eq!(app.input, "My message");
+        assert_eq!(app.active_panel, Panel::Input);
+    }
+
+    #[test]
+    fn start_edit_noop_on_others_message() {
+        let mut app = setup_app_with_own_message();
+        app.selected_message = Some(0); // other's message
+        app.start_edit();
+        assert!(!app.is_editing());
+        assert!(app.editing_message_id.is_none());
+    }
+
+    #[test]
+    fn cancel_edit_clears_state() {
+        let mut app = setup_app_with_own_message();
+        app.selected_message = Some(1);
+        app.start_edit();
+        assert!(app.is_editing());
+        app.cancel_edit();
+        assert!(!app.is_editing());
+    }
+
+    #[test]
+    fn is_own_selected_message_true() {
+        let mut app = setup_app_with_own_message();
+        app.selected_message = Some(1);
+        assert!(app.is_own_selected_message());
+    }
+
+    #[test]
+    fn is_own_selected_message_false() {
+        let mut app = setup_app_with_own_message();
+        app.selected_message = Some(0);
+        assert!(!app.is_own_selected_message());
+    }
+
+    #[test]
+    fn is_own_selected_message_false_when_none() {
+        let app = setup_app_with_own_message();
+        assert!(!app.is_own_selected_message());
+    }
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use ttyms::app::App;
+    use ttyms::models::*;
+
+    fn make_message(id: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            message_type: Some("message".to_string()),
+            body: Some(MessageBody { content: Some(format!("Msg {}", id)), content_type: None }),
+            from: None,
+            created_date_time: None,
+            reactions: None,
+        }
+    }
+
+    #[test]
+    fn prepend_older_messages() {
+        let mut app = App::new();
+        app.messages = vec![make_message("new1"), make_message("new2")];
+        let older = vec![make_message("old1"), make_message("old2")];
+        app.prepend_older_messages(older);
+        assert_eq!(app.messages.len(), 4);
+        assert_eq!(app.messages[0].id, "old1");
+        assert_eq!(app.messages[1].id, "old2");
+        assert_eq!(app.messages[2].id, "new1");
+        assert_eq!(app.messages[3].id, "new2");
+    }
+
+    #[test]
+    fn prepend_adjusts_scroll_offset() {
+        let mut app = App::new();
+        app.messages = vec![make_message("new1")];
+        app.scroll_offset = 5;
+        let older = vec![make_message("old1"), make_message("old2"), make_message("old3")];
+        app.prepend_older_messages(older);
+        // scroll_offset should increase by older.len() * 2 = 6
+        assert_eq!(app.scroll_offset, 11);
+    }
+
+    #[test]
+    fn prepend_older_channel_messages() {
+        let mut app = App::new();
+        app.channel_messages = vec![make_message("new1")];
+        let older = vec![make_message("old1"), make_message("old2")];
+        app.prepend_older_channel_messages(older);
+        assert_eq!(app.channel_messages.len(), 3);
+        assert_eq!(app.channel_messages[0].id, "old1");
+        assert_eq!(app.channel_messages[2].id, "new1");
+    }
+
+    #[test]
+    fn messages_next_link_initially_none() {
+        let app = App::new();
+        assert!(app.messages_next_link.is_none());
+        assert!(app.channel_messages_next_link.is_none());
+        assert!(!app.loading_more_messages);
+    }
+}

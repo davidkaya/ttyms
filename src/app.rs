@@ -116,6 +116,18 @@ pub struct App {
     // Unread tracking
     pub total_unread: i32,
     pub known_message_ids: HashSet<String>,
+
+    // Reply state
+    pub reply_to_message_id: Option<String>,
+    pub reply_to_preview: String,
+
+    // Edit state
+    pub editing_message_id: Option<String>,
+
+    // Pagination
+    pub messages_next_link: Option<String>,
+    pub channel_messages_next_link: Option<String>,
+    pub loading_more_messages: bool,
 }
 
 impl App {
@@ -162,6 +174,12 @@ impl App {
             channel_message_cache: HashMap::new(),
             total_unread: 0,
             known_message_ids: HashSet::new(),
+            reply_to_message_id: None,
+            reply_to_preview: String::new(),
+            editing_message_id: None,
+            messages_next_link: None,
+            channel_messages_next_link: None,
+            loading_more_messages: false,
         }
     }
 
@@ -639,6 +657,119 @@ impl App {
         let has_new = new_ids.iter().any(|id| !self.known_message_ids.contains(id));
         self.known_message_ids = new_ids;
         has_new
+    }
+
+    // ---- Reply state ----
+
+    pub fn start_reply(&mut self) {
+        if let Some(idx) = self.selected_message {
+            if let Some(msg) = self.messages.get(idx) {
+                self.reply_to_message_id = Some(msg.id.clone());
+                let preview: String = msg.content_text().chars().take(40).collect();
+                self.reply_to_preview = format!("{}: {}", msg.sender_name(), preview);
+                self.selected_message = None;
+                self.active_panel = Panel::Input;
+            }
+        }
+    }
+
+    pub fn start_channel_reply(&mut self) {
+        if let Some(idx) = self.selected_channel_message {
+            if let Some(msg) = self.channel_messages.get(idx) {
+                self.reply_to_message_id = Some(msg.id.clone());
+                let preview: String = msg.content_text().chars().take(40).collect();
+                self.reply_to_preview = format!("{}: {}", msg.sender_name(), preview);
+                self.selected_channel_message = None;
+                self.teams_panel = TeamsPanel::ChannelInput;
+            }
+        }
+    }
+
+    pub fn cancel_reply(&mut self) {
+        self.reply_to_message_id = None;
+        self.reply_to_preview.clear();
+    }
+
+    pub fn is_replying(&self) -> bool {
+        self.reply_to_message_id.is_some() && self.editing_message_id.is_none()
+    }
+
+    // ---- Edit state ----
+
+    pub fn start_edit(&mut self) {
+        let current_uid = self.current_user_id().to_string();
+        if let Some(idx) = self.selected_message {
+            if let Some(msg) = self.messages.get(idx) {
+                if msg.sender_id() == Some(&current_uid) {
+                    self.editing_message_id = Some(msg.id.clone());
+                    self.input = msg.content_text();
+                    self.input_cursor = self.input.len();
+                    self.selected_message = None;
+                    self.active_panel = Panel::Input;
+                }
+            }
+        }
+    }
+
+    pub fn start_channel_edit(&mut self) {
+        let current_uid = self.current_user_id().to_string();
+        if let Some(idx) = self.selected_channel_message {
+            if let Some(msg) = self.channel_messages.get(idx) {
+                if msg.sender_id() == Some(&current_uid) {
+                    self.editing_message_id = Some(msg.id.clone());
+                    self.channel_input = msg.content_text();
+                    self.channel_input_cursor = self.channel_input.len();
+                    self.selected_channel_message = None;
+                    self.teams_panel = TeamsPanel::ChannelInput;
+                }
+            }
+        }
+    }
+
+    pub fn cancel_edit(&mut self) {
+        self.editing_message_id = None;
+    }
+
+    pub fn is_editing(&self) -> bool {
+        self.editing_message_id.is_some()
+    }
+
+    /// Returns true if the currently selected message was sent by the current user
+    pub fn is_own_selected_message(&self) -> bool {
+        let uid = self.current_user_id();
+        self.selected_message
+            .and_then(|idx| self.messages.get(idx))
+            .and_then(|m| m.sender_id())
+            .map(|id| id == uid)
+            .unwrap_or(false)
+    }
+
+    pub fn is_own_selected_channel_message(&self) -> bool {
+        let uid = self.current_user_id();
+        self.selected_channel_message
+            .and_then(|idx| self.channel_messages.get(idx))
+            .and_then(|m| m.sender_id())
+            .map(|id| id == uid)
+            .unwrap_or(false)
+    }
+
+    // ---- Pagination helpers ----
+
+    pub fn prepend_older_messages(&mut self, older: Vec<Message>) {
+        let offset_increase = older.len();
+        let mut combined = older;
+        combined.append(&mut self.messages);
+        self.messages = combined;
+        // Adjust scroll so the view doesn't jump
+        self.scroll_offset = self.scroll_offset.saturating_add(offset_increase * 2);
+    }
+
+    pub fn prepend_older_channel_messages(&mut self, older: Vec<Message>) {
+        let offset_increase = older.len();
+        let mut combined = older;
+        combined.append(&mut self.channel_messages);
+        self.channel_messages = combined;
+        self.channel_scroll_offset = self.channel_scroll_offset.saturating_add(offset_increase * 2);
     }
 
     // ---- Cache helpers ----
