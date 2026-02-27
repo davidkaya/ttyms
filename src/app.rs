@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::models::{Channel, Chat, Message, Team, User};
+use crate::models::{Channel, ChannelMember, Chat, Message, Team, User};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -113,6 +113,10 @@ pub struct App {
     pub channels_cache: HashMap<String, Vec<Channel>>,
     pub channel_message_cache: HashMap<String, Vec<Message>>,
 
+    // Channel members
+    pub channel_members: Vec<ChannelMember>,
+    pub show_members: bool,
+
     // Unread tracking
     pub total_unread: i32,
     pub known_message_ids: HashSet<String>,
@@ -172,6 +176,8 @@ impl App {
             teams_panel: TeamsPanel::TeamList,
             channels_cache: HashMap::new(),
             channel_message_cache: HashMap::new(),
+            channel_members: Vec::new(),
+            show_members: false,
             total_unread: 0,
             known_message_ids: HashSet::new(),
             reply_to_message_id: None,
@@ -657,6 +663,12 @@ impl App {
         let has_new = new_ids.iter().any(|id| !self.known_message_ids.contains(id));
         self.known_message_ids = new_ids;
         has_new
+    }
+
+    // ---- Channel members ----
+
+    pub fn toggle_members(&mut self) {
+        self.show_members = !self.show_members;
     }
 
     // ---- Reply state ----
