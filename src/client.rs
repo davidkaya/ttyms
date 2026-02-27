@@ -84,6 +84,44 @@ impl GraphClient {
         Ok(())
     }
 
+    async fn patch_json<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<T> {
+        let resp = self
+            .client
+            .patch(url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .json(body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Graph API error ({}): {}", status, body);
+        }
+        resp.json::<T>()
+            .await
+            .context("Failed to parse Graph API response")
+    }
+
+    async fn post_no_response(&self, url: &str) -> Result<()> {
+        let resp = self
+            .client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .header("Content-Length", "0")
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Graph API error ({}): {}", status, body);
+        }
+        Ok(())
+    }
+
     // ---- User & Profile ----
 
     pub async fn get_me(&self) -> Result<User> {
@@ -104,16 +142,23 @@ impl GraphClient {
         Ok(resp.value)
     }
 
-    pub async fn get_messages(&self, chat_id: &str) -> Result<Vec<Message>> {
+    pub async fn get_messages(&self, chat_id: &str) -> Result<(Vec<Message>, Option<String>)> {
         let url = format!(
             "https://graph.microsoft.com/v1.0/me/chats/{}/messages?\
              $top=50&$orderby=createdDateTime%20desc",
             chat_id
         );
-        let resp: GraphResponse<Message> = self.get(&url).await?;
+        let resp: PagedResponse<Message> = self.get(&url).await?;
         let mut messages = resp.value;
         messages.reverse(); // Show oldest first
-        Ok(messages)
+        Ok((messages, resp.next_link))
+    }
+
+    pub async fn get_messages_page(&self, next_link: &str) -> Result<(Vec<Message>, Option<String>)> {
+        let resp: PagedResponse<Message> = self.get(next_link).await?;
+        let mut messages = resp.value;
+        messages.reverse();
+        Ok((messages, resp.next_link))
     }
 
     pub async fn send_message(&self, chat_id: &str, content: &str) -> Result<Message> {
@@ -128,6 +173,53 @@ impl GraphClient {
             }
         });
         self.post_json(&url, &body).await
+    }
+
+    pub async fn send_reply(
+        &self,
+        chat_id: &str,
+        reply_to_id: &str,
+        content: &str,
+    ) -> Result<Message> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/me/chats/{}/messages",
+            chat_id
+        );
+        let body = serde_json::json!({
+            "body": {
+                "content": content,
+                "contentType": "text"
+            },
+            "replyToId": reply_to_id
+        });
+        self.post_json(&url, &body).await
+    }
+
+    pub async fn update_message(
+        &self,
+        chat_id: &str,
+        message_id: &str,
+        content: &str,
+    ) -> Result<Message> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/me/chats/{}/messages/{}",
+            chat_id, message_id
+        );
+        let body = serde_json::json!({
+            "body": {
+                "content": content,
+                "contentType": "text"
+            }
+        });
+        self.patch_json(&url, &body).await
+    }
+
+    pub async fn soft_delete_message(&self, chat_id: &str, message_id: &str) -> Result<()> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/me/chats/{}/messages/{}/softDelete",
+            chat_id, message_id
+        );
+        self.post_no_response(&url).await
     }
 
     pub async fn create_chat(&self, user_email: &str, my_id: &str) -> Result<Chat> {
@@ -266,15 +358,15 @@ impl GraphClient {
         &self,
         team_id: &str,
         channel_id: &str,
-    ) -> Result<Vec<Message>> {
+    ) -> Result<(Vec<Message>, Option<String>)> {
         let url = format!(
             "https://graph.microsoft.com/v1.0/teams/{}/channels/{}/messages?$top=50",
             team_id, channel_id
         );
-        let resp: GraphResponse<Message> = self.get(&url).await?;
+        let resp: PagedResponse<Message> = self.get(&url).await?;
         let mut messages = resp.value;
         messages.reverse();
-        Ok(messages)
+        Ok((messages, resp.next_link))
     }
 
     pub async fn send_channel_message(
@@ -296,7 +388,6 @@ impl GraphClient {
         self.post_json(&url, &body).await
     }
 
-    #[allow(dead_code)]
     pub async fn reply_to_channel_message(
         &self,
         team_id: &str,
