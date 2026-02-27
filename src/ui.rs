@@ -288,15 +288,45 @@ fn draw_chat_list(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_message_area(frame: &mut Frame, app: &App, area: Rect) {
+    let reply_or_edit = app.is_replying() || app.is_editing();
+    let constraints = if reply_or_edit {
+        vec![Constraint::Min(5), Constraint::Length(1), Constraint::Length(3)]
+    } else {
+        vec![Constraint::Min(5), Constraint::Length(0), Constraint::Length(3)]
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(3)])
+        .constraints(constraints)
         .split(area);
 
     draw_messages(frame, app, &app.messages, app.scroll_offset, app.selected_message,
-                  &app.selected_chat_name(), app.active_panel == Panel::Messages, chunks[0]);
+                  &app.selected_chat_name(), app.active_panel == Panel::Messages,
+                  app.loading_more_messages && app.messages_next_link.is_some(), chunks[0]);
+
+    if app.is_replying() {
+        let reply_line = Paragraph::new(Line::from(vec![
+            Span::styled(" ↩ Replying to: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(&app.reply_to_preview, Style::default().fg(Color::DarkGray)),
+            Span::styled("  (Esc to cancel)", Style::default().fg(Color::DarkGray)),
+        ]));
+        frame.render_widget(reply_line, chunks[1]);
+    } else if app.is_editing() {
+        let edit_line = Paragraph::new(Line::from(vec![
+            Span::styled(" ✏ Editing message", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("  (Esc to cancel)", Style::default().fg(Color::DarkGray)),
+        ]));
+        frame.render_widget(edit_line, chunks[1]);
+    }
+
+    let input_title = if app.is_editing() {
+        " Edit Message "
+    } else if app.is_replying() {
+        " Reply "
+    } else {
+        " Message "
+    };
     draw_input_box(frame, &app.input, app.input_cursor,
-                   app.active_panel == Panel::Input, " Message ", chunks[1]);
+                   app.active_panel == Panel::Input, input_title, chunks[2]);
 }
 
 fn draw_messages(
@@ -307,6 +337,7 @@ fn draw_messages(
     selected_message: Option<usize>,
     title: &str,
     is_active: bool,
+    has_more: bool,
     area: Rect,
 ) {
     let border_color = if is_active { Color::Cyan } else { Color::DarkGray };
@@ -329,6 +360,14 @@ fn draw_messages(
 
     let current_user_id = app.current_user_id();
     let mut lines: Vec<Line> = Vec::new();
+
+    if has_more {
+        lines.push(Line::from(Span::styled(
+            "  ▲ Scroll up to load older messages…",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )));
+        lines.push(Line::from(""));
+    }
 
     for (idx, msg) in messages.iter().enumerate() {
         if !msg.is_user_message() {
@@ -614,20 +653,52 @@ fn draw_channel_list(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_channel_message_area(frame: &mut Frame, app: &App, area: Rect) {
+    let reply_or_edit = app.is_replying() || app.is_editing();
+    let constraints = if reply_or_edit && app.view_mode == ViewMode::Teams {
+        vec![Constraint::Min(5), Constraint::Length(1), Constraint::Length(3)]
+    } else {
+        vec![Constraint::Min(5), Constraint::Length(0), Constraint::Length(3)]
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(3)])
+        .constraints(constraints)
         .split(area);
 
     let title = app.selected_channel_name();
     draw_messages(
         frame, app, &app.channel_messages, app.channel_scroll_offset,
         app.selected_channel_message,
-        &title, app.teams_panel == TeamsPanel::ChannelMessages, chunks[0],
+        &title, app.teams_panel == TeamsPanel::ChannelMessages,
+        app.loading_more_messages && app.channel_messages_next_link.is_some(), chunks[0],
     );
+
+    if app.view_mode == ViewMode::Teams {
+        if app.is_replying() {
+            let reply_line = Paragraph::new(Line::from(vec![
+                Span::styled(" ↩ Replying to: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(&app.reply_to_preview, Style::default().fg(Color::DarkGray)),
+                Span::styled("  (Esc to cancel)", Style::default().fg(Color::DarkGray)),
+            ]));
+            frame.render_widget(reply_line, chunks[1]);
+        } else if app.is_editing() {
+            let edit_line = Paragraph::new(Line::from(vec![
+                Span::styled(" ✏ Editing message", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("  (Esc to cancel)", Style::default().fg(Color::DarkGray)),
+            ]));
+            frame.render_widget(edit_line, chunks[1]);
+        }
+    }
+
+    let input_title = if app.is_editing() && app.view_mode == ViewMode::Teams {
+        " Edit Channel Message "
+    } else if app.is_replying() && app.view_mode == ViewMode::Teams {
+        " Reply "
+    } else {
+        " Channel Message "
+    };
     draw_input_box(
         frame, &app.channel_input, app.channel_input_cursor,
-        app.teams_panel == TeamsPanel::ChannelInput, " Channel Message ", chunks[1],
+        app.teams_panel == TeamsPanel::ChannelInput, input_title, chunks[2],
     );
 }
 
@@ -664,8 +735,17 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 Panel::Messages => {
                     add_shortcut("s", "Select Message", &mut spans);
-                    add_shortcut("e", "Add Reaction", &mut spans);
-                    add_shortcut("r", "Refresh", &mut spans);
+                    if app.selected_message.is_some() {
+                        add_shortcut("r", "Reply", &mut spans);
+                        add_shortcut("e", "React", &mut spans);
+                        if app.is_own_selected_message() {
+                            add_shortcut("w", "Edit", &mut spans);
+                            add_shortcut("d", "Delete", &mut spans);
+                        }
+                    } else {
+                        add_shortcut("e", "Add Reaction", &mut spans);
+                        add_shortcut("r", "Refresh", &mut spans);
+                    }
                 }
                 Panel::Input => {}
             }
@@ -685,9 +765,17 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 TeamsPanel::ChannelMessages => {
                     add_shortcut("s", "Select Message", &mut spans);
-                    add_shortcut("e", "Add Reaction", &mut spans);
+                    if app.selected_channel_message.is_some() {
+                        add_shortcut("r", "Reply", &mut spans);
+                        add_shortcut("e", "React", &mut spans);
+                        if app.is_own_selected_channel_message() {
+                            add_shortcut("d", "Delete", &mut spans);
+                        }
+                    } else {
+                        add_shortcut("e", "Add Reaction", &mut spans);
+                        add_shortcut("r", "Refresh", &mut spans);
+                    }
                     add_shortcut("Enter", "Write Message", &mut spans);
-                    add_shortcut("r", "Refresh", &mut spans);
                     add_shortcut("Esc", "Back", &mut spans);
                 }
                 TeamsPanel::ChannelInput => {
