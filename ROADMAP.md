@@ -29,6 +29,7 @@ Feature roadmap for the terminal Microsoft Teams client. All features below are 
 - **Message pagination** — scroll up to load older messages via `@odata.nextLink`
 - **Homebrew distribution** — `brew install davidkaya/tap/ttyms` with pre-built macOS binaries
 - **Channel member list** — toggle member sidebar with `m` key, owners marked with 👑
+- **Settings dialog** — configurable refresh interval via in-app settings
 
 ---
 

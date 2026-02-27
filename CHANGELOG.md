@@ -7,11 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-02-27
+
+### Added
+
+- **Settings dialog** — configurable refresh interval via in-app settings UI
+- Dependabot enabled for automated Cargo dependency updates
+
 ### Changed
 
 - Updated all dependencies to latest versions: ratatui 0.30, crossterm 0.29, reqwest 0.13, keyring 3, rand 0.10, dirs 6, base64 0.22, toml 1.0
 - Migrated reqwest TLS feature from `rustls-tls` to `rustls` (renamed in 0.13)
 - Migrated deprecated ratatui APIs (`frame.size()` → `frame.area()`, `frame.set_cursor()` → `frame.set_cursor_position()`)
+- Auto-refresh moved to background with parallelized presence loading for snappier UI
+
+### Fixed
+
+- API errors now shown as modal dialogs instead of truncated status bar text
+- Channel permission errors (403) displayed as modal dialog with clear guidance
+- Graceful handling of missing `ChannelMessage.Read.All` permission
 
 ## [0.1.3] - 2026-02-27
 
