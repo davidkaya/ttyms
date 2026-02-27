@@ -78,6 +78,11 @@ fn store_token(token: &TokenResponse) -> Result<()> {
         return Ok(());
     }
     // Fall back to file in config dir (protected by OS user permissions)
+    let path = token_file_path()?;
+    eprintln!(
+        "⚠ OS credential store unavailable — tokens saved to {}",
+        path.display()
+    );
     store_token_file(token)
 }
 
