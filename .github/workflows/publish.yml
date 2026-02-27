@@ -20,6 +20,78 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - run: cargo test --verbose
 
+  build-binaries:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: contains(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+            echo "PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          ARCHIVE="ttyms-${VERSION}-${{ matrix.target }}.tar.gz"
+          cd target/${{ matrix.target }}/release
+          tar czf "../../../${ARCHIVE}" ttyms
+          cd ../../..
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttyms-${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+  github-release:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
+
   publish-crates:
     needs: test
     runs-on: ubuntu-latest
@@ -33,6 +105,56 @@ jobs:
         run: cargo publish --dry-run
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-homebrew:
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute SHA256 and update formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${GITHUB_REF_NAME}"
+
+          SHA_X86=$(sha256sum artifacts/ttyms-${TAG}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_ARM=$(sha256sum artifacts/ttyms-${TAG}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_LINUX_X86=$(sha256sum artifacts/ttyms-${TAG}-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+          SHA_LINUX_ARM=$(sha256sum artifacts/ttyms-${TAG}-aarch64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+
+          sed -e "s/VERSION_PLACEHOLDER/${VERSION}/" \
+              -e "s/SHA256_X86_64_PLACEHOLDER/${SHA_X86}/" \
+              -e "s/SHA256_ARM64_PLACEHOLDER/${SHA_ARM}/" \
+              -e "s/SHA256_LINUX_X86_64_PLACEHOLDER/${SHA_LINUX_X86}/" \
+              -e "s/SHA256_LINUX_ARM64_PLACEHOLDER/${SHA_LINUX_ARM}/" \
+              pkg/homebrew/ttyms.rb > ttyms.rb
+
+          echo "Generated formula:"
+          cat ttyms.rb
+
+      - name: Push to Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN not set, skipping tap update"
+            exit 0
+          fi
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/davidkaya/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp ttyms.rb tap/Formula/ttyms.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/ttyms.rb
+          git commit -m "Update ttyms to ${GITHUB_REF_NAME#v}" || echo "No changes"
+          git push
 
   publish-aur:
     needs: publish-crates
