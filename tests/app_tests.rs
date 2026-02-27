@@ -1427,3 +1427,102 @@ mod delta_sync_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod search_tests {
+    use ttyms::app::{App, DialogMode, Panel};
+    use ttyms::models::{Chat, SearchHit};
+
+    fn make_chat(id: &str) -> Chat {
+        Chat {
+            id: id.to_string(),
+            topic: None,
+            chat_type: "oneOnOne".to_string(),
+            members: None,
+            last_message_preview: None,
+            unread_message_count: None,
+        }
+    }
+
+    #[test]
+    fn open_search_sets_dialog() {
+        let mut app = App::new();
+        app.open_search();
+        assert!(matches!(app.dialog, DialogMode::Search));
+        assert!(app.search_input.is_empty());
+        assert_eq!(app.search_cursor, 0);
+        assert!(app.search_results.is_empty());
+        assert_eq!(app.selected_search_result, 0);
+        assert!(!app.search_loading);
+    }
+
+    #[test]
+    fn open_search_clears_previous_state() {
+        let mut app = App::new();
+        app.search_input = "old query".to_string();
+        app.search_cursor = 5;
+        app.selected_search_result = 3;
+        app.open_search();
+        assert!(app.search_input.is_empty());
+        assert_eq!(app.search_cursor, 0);
+        assert_eq!(app.selected_search_result, 0);
+    }
+
+    #[test]
+    fn navigate_to_known_chat() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("chat-1"), make_chat("chat-2"), make_chat("chat-3")];
+        assert!(app.navigate_to_chat("chat-2"));
+        assert_eq!(app.selected_chat, 1);
+        assert_eq!(app.active_panel, Panel::Messages);
+    }
+
+    #[test]
+    fn navigate_to_unknown_chat_returns_false() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("chat-1")];
+        assert!(!app.navigate_to_chat("chat-unknown"));
+    }
+
+    #[test]
+    fn search_results_navigation() {
+        let mut app = App::new();
+        let hits: Vec<SearchHit> = (0..5)
+            .map(|_| SearchHit {
+                summary: Some("test".to_string()),
+                resource: None,
+            })
+            .collect();
+        app.search_results = hits;
+        app.selected_search_result = 0;
+
+        // Move down
+        app.selected_search_result = (app.selected_search_result + 1)
+            .min(app.search_results.len().saturating_sub(1));
+        assert_eq!(app.selected_search_result, 1);
+
+        // Move to last
+        app.selected_search_result = 4;
+        app.selected_search_result = (app.selected_search_result + 1)
+            .min(app.search_results.len().saturating_sub(1));
+        assert_eq!(app.selected_search_result, 4); // Stays at end
+
+        // Move up
+        app.selected_search_result = app.selected_search_result.saturating_sub(1);
+        assert_eq!(app.selected_search_result, 3);
+
+        // Move to first
+        app.selected_search_result = 0;
+        app.selected_search_result = app.selected_search_result.saturating_sub(1);
+        assert_eq!(app.selected_search_result, 0); // Stays at start
+    }
+
+    #[test]
+    fn close_dialog_from_search() {
+        let mut app = App::new();
+        app.open_search();
+        app.search_input = "query".to_string();
+        app.close_dialog();
+        assert!(matches!(app.dialog, DialogMode::None));
+    }
+}

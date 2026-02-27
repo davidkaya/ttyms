@@ -798,3 +798,102 @@ mod delta_response_deserialization {
         assert!(resp.delta_link.is_some());
     }
 }
+
+#[cfg(test)]
+mod search_response_tests {
+    use ttyms::models::{SearchHit, SearchResponse};
+
+    #[test]
+    fn deserialize_search_response_with_hits() {
+        let json = r#"{
+            "value": [{
+                "hitsContainers": [{
+                    "hits": [
+                        {
+                            "summary": "Hello <b>world</b>",
+                            "resource": {
+                                "id": "msg-1",
+                                "createdDateTime": "2026-01-15T10:30:00Z",
+                                "chatId": "chat-123",
+                                "from": {
+                                    "emailAddress": {
+                                        "name": "Alice Smith",
+                                        "address": "alice@example.com"
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    "total": 1,
+                    "moreResultsAvailable": false
+                }]
+            }]
+        }"#;
+        let resp: SearchResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.value.len(), 1);
+        let hits = &resp.value[0].hits_containers[0].hits;
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].sender_name(), "Alice Smith");
+        assert_eq!(hits[0].chat_id(), Some("chat-123"));
+        assert_eq!(hits[0].summary_text(), "Hello world");
+    }
+
+    #[test]
+    fn deserialize_search_response_empty() {
+        let json = r#"{
+            "value": [{
+                "hitsContainers": [{
+                    "hits": [],
+                    "total": 0,
+                    "moreResultsAvailable": false
+                }]
+            }]
+        }"#;
+        let resp: SearchResponse = serde_json::from_str(json).unwrap();
+        let hits = &resp.value[0].hits_containers[0].hits;
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn search_hit_sender_name_fallback() {
+        let hit = SearchHit {
+            summary: Some("test".to_string()),
+            resource: None,
+        };
+        assert_eq!(hit.sender_name(), "Unknown");
+    }
+
+    #[test]
+    fn search_hit_summary_strips_html() {
+        let json = r#"{
+            "summary": "<b>important</b> meeting <em>tomorrow</em>",
+            "resource": null
+        }"#;
+        let hit: SearchHit = serde_json::from_str(json).unwrap();
+        assert_eq!(hit.summary_text(), "important meeting tomorrow");
+    }
+
+    #[test]
+    fn search_hit_formatted_time() {
+        let json = r#"{
+            "summary": "test",
+            "resource": {
+                "createdDateTime": "2026-01-15T10:30:00Z",
+                "chatId": "chat-1"
+            }
+        }"#;
+        let hit: SearchHit = serde_json::from_str(json).unwrap();
+        // Should produce a non-empty formatted time string
+        assert!(!hit.formatted_time().is_empty());
+    }
+
+    #[test]
+    fn search_hit_empty_summary() {
+        let hit = SearchHit {
+            summary: None,
+            resource: None,
+        };
+        assert_eq!(hit.summary_text(), "");
+        assert_eq!(hit.formatted_time(), "");
+    }
+}

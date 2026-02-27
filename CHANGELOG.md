@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Delta-based message sync** — uses Microsoft Graph delta queries (`/messages/delta`) for incremental message updates instead of full re-fetching, reducing API calls and latency
+- **Message search** — full-text search across all chats via `/` key, powered by Microsoft Search API (`POST /search/query` with `chatMessage` entity type); shows sender, timestamp, and summary snippet; Enter on a result navigates to the chat
 
 ## [0.1.4] - 2026-02-27
 

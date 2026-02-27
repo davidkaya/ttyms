@@ -31,6 +31,7 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Channel member list** — toggle member sidebar with `m` key, owners marked with 👑
 - **Settings dialog** — configurable refresh interval via in-app settings
 - **Delta-based message sync** — incremental message updates via Graph delta queries
+- **Message search** — full-text search across chats via Microsoft Search API (`/search/query`)
 
 ---
 
@@ -102,11 +103,11 @@ Render inline images in the terminal using unicode block characters or sixel pro
 - Only new/changed messages are fetched on each poll cycle, dramatically reducing API calls
 - Delta tokens stored per-chat for efficient incremental updates
 
-### Search messages
-Full-text search across all chats and channels.
-- `GET /me/chats/{id}/messages?$search="query"` (limited)
-- `POST /search/query` — Microsoft Search API with `chatMessage` entity type
-- Scope: `Chat.Read`
+### ~~Search messages~~ ✅
+~~Full-text search across all chats and channels.~~
+- ~~`GET /me/chats/{id}/messages?$search="query"` (limited)~~
+- ~~`POST /search/query` — Microsoft Search API with `chatMessage` entity type~~
+- ~~Scope: `Chat.Read`~~
 
 ### Chat management
 Rename group chats, add/remove members, leave a chat.

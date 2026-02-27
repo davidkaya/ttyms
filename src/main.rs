@@ -89,6 +89,9 @@ enum BgResult {
     TokenRefreshed(String),
     // Delta query results (incremental sync)
     DeltaChatMessages(String, Vec<models::Message>, Option<String>),
+    // Search results
+    SearchResults(Vec<models::SearchHit>),
+    SearchError(String),
 }
 
 #[tokio::main]
@@ -304,6 +307,16 @@ async fn run_app(
                         }
                     }
                 }
+                BgResult::SearchResults(hits) => {
+                    app.search_loading = false;
+                    app.search_results = hits;
+                    app.selected_search_result = 0;
+                }
+                BgResult::SearchError(err) => {
+                    app.search_loading = false;
+                    app.search_results.clear();
+                    app.status_message = format!("Search failed: {}", err);
+                }
             }
         }
 
@@ -338,6 +351,10 @@ async fn run_app(
                     }
                     DialogMode::Settings => {
                         handle_settings_keys(&mut app, &mut config, key.code);
+                        continue;
+                    }
+                    DialogMode::Search => {
+                        handle_search_keys(&mut app, &graph, &bg_tx, key.code).await;
                         continue;
                     }
                     DialogMode::Error(info) => {
@@ -390,6 +407,12 @@ async fn run_app(
                         && app.teams_panel != TeamsPanel::ChannelInput =>
                     {
                         app.open_settings();
+                        continue;
+                    }
+                    KeyCode::Char('/') if app.active_panel != Panel::Input
+                        && app.teams_panel != TeamsPanel::ChannelInput =>
+                    {
+                        app.open_search();
                         continue;
                     }
                     _ => {}
@@ -959,6 +982,91 @@ fn apply_setting(app: &mut app::App, config: &mut config::Config, index: usize, 
     }
     if let Err(e) = config::save_config(config) {
         app.status_message = format!("Failed to save config: {}", e);
+    }
+}
+
+async fn handle_search_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
+    match code {
+        KeyCode::Esc => {
+            app.close_dialog();
+        }
+        KeyCode::Enter => {
+            if !app.search_results.is_empty() {
+                // Navigate to the chat containing the selected result
+                let selected = app.selected_search_result;
+                if let Some(chat_id) = app
+                    .search_results
+                    .get(selected)
+                    .and_then(|h| h.chat_id().map(String::from))
+                {
+                    app.close_dialog();
+                    if app.navigate_to_chat(&chat_id) {
+                        load_messages(graph, app).await;
+                    } else {
+                        app.status_message =
+                            "Chat not found in your chat list".to_string();
+                    }
+                }
+            } else if !app.search_input.is_empty() {
+                // Execute search
+                app.search_loading = true;
+                let query = app.search_input.clone();
+                let graph_clone = graph.clone_for_background();
+                let tx = bg_tx.clone();
+                tokio::spawn(async move {
+                    match graph_clone.search_messages(&query).await {
+                        Ok(hits) => {
+                            let _ = tx.send(BgResult::SearchResults(hits));
+                        }
+                        Err(e) => {
+                            let _ =
+                                tx.send(BgResult::SearchError(e.to_string()));
+                        }
+                    }
+                });
+            }
+        }
+        KeyCode::Up | KeyCode::BackTab => {
+            if !app.search_results.is_empty() {
+                app.selected_search_result =
+                    app.selected_search_result.saturating_sub(1);
+            }
+        }
+        KeyCode::Down | KeyCode::Tab => {
+            if !app.search_results.is_empty() {
+                app.selected_search_result = (app.selected_search_result + 1)
+                    .min(app.search_results.len().saturating_sub(1));
+            }
+        }
+        KeyCode::Char(c) => {
+            app.search_input.insert(app.search_cursor, c);
+            app.search_cursor += 1;
+            // Clear old results when typing
+            app.search_results.clear();
+            app.selected_search_result = 0;
+        }
+        KeyCode::Backspace => {
+            if app.search_cursor > 0 {
+                app.search_cursor -= 1;
+                app.search_input.remove(app.search_cursor);
+                app.search_results.clear();
+                app.selected_search_result = 0;
+            }
+        }
+        KeyCode::Left => {
+            app.search_cursor = app.search_cursor.saturating_sub(1);
+        }
+        KeyCode::Right => {
+            if app.search_cursor < app.search_input.len() {
+                app.search_cursor += 1;
+            }
+        }
+        _ => {}
     }
 }
 

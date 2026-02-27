@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::models::{Channel, ChannelMember, Chat, Message, Team, User};
+use crate::models::{Channel, ChannelMember, Chat, Message, SearchHit, Team, User};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -45,6 +45,7 @@ pub enum DialogMode {
     ReactionPicker,
     PresencePicker,
     Settings,
+    Search,
     Error(ErrorInfo),
 }
 
@@ -145,6 +146,13 @@ pub struct App {
     pub editing_setting: bool,
     pub setting_input: String,
     pub setting_input_cursor: usize,
+
+    // Search
+    pub search_input: String,
+    pub search_cursor: usize,
+    pub search_results: Vec<SearchHit>,
+    pub selected_search_result: usize,
+    pub search_loading: bool,
 }
 
 impl App {
@@ -205,6 +213,11 @@ impl App {
             editing_setting: false,
             setting_input: String::new(),
             setting_input_cursor: 0,
+            search_input: String::new(),
+            search_cursor: 0,
+            search_results: Vec::new(),
+            selected_search_result: 0,
+            search_loading: false,
         }
     }
 
@@ -540,6 +553,26 @@ impl App {
         self.editing_setting = false;
         self.setting_input.clear();
         self.setting_input_cursor = 0;
+    }
+
+    pub fn open_search(&mut self) {
+        self.dialog = DialogMode::Search;
+        self.search_input.clear();
+        self.search_cursor = 0;
+        self.search_results.clear();
+        self.selected_search_result = 0;
+        self.search_loading = false;
+    }
+
+    pub fn navigate_to_chat(&mut self, chat_id: &str) -> bool {
+        if let Some(idx) = self.chats.iter().position(|c| c.id == chat_id) {
+            self.switch_to_chats();
+            self.selected_chat = idx;
+            self.active_panel = Panel::Messages;
+            true
+        } else {
+            false
+        }
     }
 
     // ---- Teams navigation ----

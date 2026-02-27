@@ -114,6 +114,7 @@ fn draw_main(frame: &mut Frame, app: &App) {
         DialogMode::ReactionPicker => draw_reaction_picker(frame, app),
         DialogMode::PresencePicker => draw_presence_picker(frame, app),
         DialogMode::Settings => draw_settings_dialog(frame, app),
+        DialogMode::Search => draw_search_dialog(frame, app),
         DialogMode::Error(info) => draw_error_dialog(frame, info),
         DialogMode::None => {}
     }
@@ -832,6 +833,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 Panel::Input => {}
             }
+            add_shortcut("/", "Search", &mut spans);
             add_shortcut("p", "Set Status", &mut spans);
             add_shortcut("o", "Settings", &mut spans);
             add_shortcut("q", "Quit", &mut spans);
@@ -869,6 +871,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     add_shortcut("Esc", "Back", &mut spans);
                 }
             }
+            add_shortcut("/", "Search", &mut spans);
             add_shortcut("p", "Set Status", &mut spans);
             add_shortcut("o", "Settings", &mut spans);
             add_shortcut("q", "Quit", &mut spans);
@@ -1128,6 +1131,109 @@ fn draw_settings_dialog(frame: &mut Frame, app: &App) {
 
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
+}
+
+fn draw_search_dialog(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+    let results_count = app.search_results.len().min(10);
+    let dialog_height = if app.search_loading {
+        8
+    } else if results_count > 0 {
+        7 + (results_count as u16 * 2)
+    } else if !app.search_input.is_empty() {
+        8
+    } else {
+        7
+    };
+    let popup = centered_rect(70, dialog_height.min(area.height.saturating_sub(4)), area);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" Search Messages ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let display_input = if app.search_input.is_empty() {
+        "Type to search messages…"
+    } else {
+        &app.search_input
+    };
+    let input_style = if app.search_input.is_empty() {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let mut lines = vec![
+        Line::from(Span::styled("🔍 Query:", Style::default().fg(Color::Gray))),
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::styled(display_input, input_style),
+        ]),
+    ];
+
+    if app.search_loading {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Searching…",
+            Style::default().fg(Color::Yellow),
+        )));
+    } else if !app.search_results.is_empty() {
+        lines.push(Line::from(""));
+        for (i, hit) in app.search_results.iter().take(10).enumerate() {
+            let is_selected = i == app.selected_search_result;
+            let indicator = if is_selected { "▸ " } else { "  " };
+            let name_style = if is_selected {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let time_str = format!("  {}", hit.formatted_time());
+            lines.push(Line::from(vec![
+                Span::styled(indicator, name_style),
+                Span::styled(hit.sender_name(), name_style),
+                Span::styled(time_str, Style::default().fg(Color::DarkGray)),
+            ]));
+            // Truncate summary to fit
+            let summary = hit.summary_text();
+            let max_len = inner.width.saturating_sub(4) as usize;
+            let truncated = if summary.len() > max_len {
+                format!("{}…", &summary[..max_len.saturating_sub(1)])
+            } else {
+                summary
+            };
+            lines.push(Line::from(Span::styled(
+                format!("    {}", truncated),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    } else if !app.search_input.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "No results found",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    let hint = if app.search_results.is_empty() {
+        "Enter: search  │  Esc: close"
+    } else {
+        "↑↓: select  │  Enter: open chat  │  Esc: close"
+    };
+    lines.push(Line::from(Span::styled(
+        hint,
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+
+    let cursor_pos = app.search_input[..app.search_cursor].chars().count() as u16;
+    frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y + 1));
 }
 
 fn draw_error_dialog(frame: &mut Frame, info: &crate::app::ErrorInfo) {

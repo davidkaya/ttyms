@@ -450,6 +450,29 @@ impl GraphClient {
         self.post_json(&url, &body).await
     }
 
+    // ---- Search ----
+
+    pub async fn search_messages(&self, query: &str) -> Result<Vec<SearchHit>> {
+        let body = serde_json::json!({
+            "requests": [{
+                "entityTypes": ["chatMessage"],
+                "query": { "queryString": query },
+                "from": 0,
+                "size": 25
+            }]
+        });
+        let resp: SearchResponse = self
+            .post_json("https://graph.microsoft.com/v1.0/search/query", &body)
+            .await?;
+        let hits = resp
+            .value
+            .into_iter()
+            .flat_map(|rs| rs.hits_containers)
+            .flat_map(|hc| hc.hits)
+            .collect();
+        Ok(hits)
+    }
+
     // ---- Read receipts ----
 
     pub async fn mark_chat_read(&self, chat_id: &str, user_id: &str) -> Result<()> {

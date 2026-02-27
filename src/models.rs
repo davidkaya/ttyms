@@ -325,6 +325,98 @@ pub const PRESENCE_STATUSES: &[(&str, &str)] = &[
     ("Offline", "⚫ Appear Offline"),
 ];
 
+// ---- Search results ----
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchResponse {
+    pub value: Vec<SearchResultSet>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchResultSet {
+    #[serde(rename = "hitsContainers", default)]
+    pub hits_containers: Vec<HitsContainer>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HitsContainer {
+    #[serde(default)]
+    pub hits: Vec<SearchHit>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub total: i32,
+    #[serde(rename = "moreResultsAvailable", default)]
+    #[allow(dead_code)]
+    pub more_results_available: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchHit {
+    #[serde(default)]
+    pub summary: Option<String>,
+    pub resource: Option<SearchChatMessage>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchChatMessage {
+    #[allow(dead_code)]
+    pub id: Option<String>,
+    #[serde(rename = "createdDateTime")]
+    pub created_date_time: Option<String>,
+    pub from: Option<SearchFrom>,
+    #[serde(rename = "chatId")]
+    pub chat_id: Option<String>,
+    #[serde(rename = "channelIdentity")]
+    #[allow(dead_code)]
+    pub channel_identity: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchFrom {
+    #[serde(rename = "emailAddress")]
+    pub email_address: Option<SearchEmailAddress>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchEmailAddress {
+    pub name: Option<String>,
+    #[allow(dead_code)]
+    pub address: Option<String>,
+}
+
+impl SearchHit {
+    pub fn sender_name(&self) -> String {
+        self.resource
+            .as_ref()
+            .and_then(|r| r.from.as_ref())
+            .and_then(|f| f.email_address.as_ref())
+            .and_then(|e| e.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string())
+    }
+
+    pub fn summary_text(&self) -> String {
+        self.summary
+            .as_ref()
+            .map(|s| strip_html(s))
+            .unwrap_or_default()
+    }
+
+    pub fn chat_id(&self) -> Option<&str> {
+        self.resource
+            .as_ref()
+            .and_then(|r| r.chat_id.as_deref())
+    }
+
+    pub fn formatted_time(&self) -> String {
+        self.resource
+            .as_ref()
+            .and_then(|r| r.created_date_time.as_ref())
+            .and_then(|dt| chrono::DateTime::parse_from_rfc3339(dt).ok())
+            .map(|dt| dt.with_timezone(&chrono::Local).format("%m/%d %H:%M").to_string())
+            .unwrap_or_default()
+    }
+}
+
 /// Rich text segment for terminal rendering
 #[derive(Debug, Clone, PartialEq)]
 pub enum RichSegment {
