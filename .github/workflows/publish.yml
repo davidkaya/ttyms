@@ -22,6 +22,8 @@ jobs:
 
   build-binaries:
     needs: test
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -72,31 +74,11 @@ jobs:
           cd ../../..
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ttyms-${{ matrix.target }}
-          path: ${{ env.ARCHIVE }}
-
-  github-release:
-    needs: build-binaries
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Create GitHub Release
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: artifacts/*
+          files: ${{ env.ARCHIVE }}
 
   publish-crates:
     needs: test
@@ -115,16 +97,20 @@ jobs:
         run: cargo publish
 
   publish-homebrew:
-    needs: github-release
+    needs: build-binaries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          mkdir -p artifacts
+          for target in x86_64-apple-darwin aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            gh release download "${TAG}" --pattern "ttyms-${TAG}-${target}.tar.gz" --dir artifacts
+          done
 
       - name: Compute SHA256 and update formula
         run: |
