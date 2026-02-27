@@ -67,10 +67,21 @@ jobs:
           cd ../../..
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
 
+      - name: Extract changelog for release
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract section between ## [VERSION] and next ## [
+          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          # Use delimiter to handle multiline
+          echo "NOTES<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.NOTES }}
           files: ${{ env.ARCHIVE }}
 
   publish-crates:

@@ -65,6 +65,12 @@ It uses the Microsoft Graph API for messaging and OAuth2 for authentication.
 - When all items in a phase are complete, mark the phase header as **SHIPPED**
 - When adding new features not on the roadmap, add them to the appropriate phase or create a new section
 
+### Changelog
+- **Always update `CHANGELOG.md`** when adding features, fixing bugs, or making notable changes
+- Add entries under `## [Unreleased]` using Keep a Changelog format (Added, Changed, Fixed, Removed)
+- On release, move `[Unreleased]` entries to a versioned section `## [x.y.z] - YYYY-MM-DD`
+- The CI pipeline extracts the changelog section for GitHub Release notes automatically
+
 ### Derived File Hygiene
 - **Always commit `Cargo.lock`** after changing `Cargo.toml` (version bumps, dependency changes)
 - **Bump the version in `Cargo.toml`** when creating a new release tag
