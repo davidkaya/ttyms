@@ -92,6 +92,10 @@ enum BgResult {
     // Search results
     SearchResults(Vec<models::SearchHit>),
     SearchError(String),
+    // Chat manager results
+    ChatMembers(Vec<models::ChatMember>),
+    ChatManagerAction(String),
+    ChatManagerError(String),
 }
 
 #[tokio::main]
@@ -317,6 +321,17 @@ async fn run_app(
                     app.search_results.clear();
                     app.status_message = format!("Search failed: {}", err);
                 }
+                BgResult::ChatMembers(members) => {
+                    app.chat_manager_loading = false;
+                    app.chat_manager_members = members;
+                    app.chat_manager_selected_member = 0;
+                }
+                BgResult::ChatManagerAction(msg) => {
+                    app.status_message = msg;
+                }
+                BgResult::ChatManagerError(err) => {
+                    app.status_message = format!("Chat manager: {}", err);
+                }
             }
         }
 
@@ -355,6 +370,10 @@ async fn run_app(
                     }
                     DialogMode::Search => {
                         handle_search_keys(&mut app, &graph, &bg_tx, key.code).await;
+                        continue;
+                    }
+                    DialogMode::ChatManager => {
+                        handle_chat_manager_keys(&mut app, &graph, &bg_tx, key.code).await;
                         continue;
                     }
                     DialogMode::Error(info) => {
@@ -419,7 +438,7 @@ async fn run_app(
                 }
 
                 match app.view_mode {
-                    ViewMode::Chats => handle_chats_keys(&mut app, &graph, key.code).await,
+                    ViewMode::Chats => handle_chats_keys(&mut app, &graph, &bg_tx, key.code).await,
                     ViewMode::Teams => {
                         handle_teams_keys(&mut app, &graph, &bg_tx, key.code).await;
                     }
@@ -446,7 +465,12 @@ async fn run_app(
 
 // ---- Chat view key handling ----
 
-async fn handle_chats_keys(app: &mut app::App, graph: &client::GraphClient, code: KeyCode) {
+async fn handle_chats_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
     match app.active_panel {
         Panel::ChatList => match code {
             KeyCode::Char('q') => std::process::exit(0),
@@ -469,6 +493,9 @@ async fn handle_chats_keys(app: &mut app::App, graph: &client::GraphClient, code
             }
             KeyCode::Enter => app.active_panel = Panel::Input,
             KeyCode::Char('r') => refresh_all(graph, app).await,
+            KeyCode::Char('g') => {
+                open_chat_manager(app, graph, &bg_tx).await;
+            }
             _ => {}
         },
         Panel::Messages => match code {
@@ -1064,6 +1091,319 @@ async fn handle_search_keys(
         KeyCode::Right => {
             if app.search_cursor < app.search_input.len() {
                 app.search_cursor += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn open_chat_manager(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+) {
+    if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        app.open_chat_manager();
+        // Pre-fill rename input with current topic
+        app.chat_manager_rename_input = app.selected_chat_topic();
+        app.chat_manager_rename_cursor = app.chat_manager_rename_input.len();
+        // Load members in background
+        let g = graph.clone_for_background();
+        let tx = bg_tx.clone();
+        let cid = chat_id.clone();
+        tokio::spawn(async move {
+            match g.get_chat_members(&cid).await {
+                Ok(members) => {
+                    let _ = tx.send(BgResult::ChatMembers(members));
+                }
+                Err(e) => {
+                    let _ = tx.send(BgResult::ChatManagerError(
+                        format!("Failed to load members: {}", e),
+                    ));
+                }
+            }
+        });
+    }
+}
+
+async fn handle_chat_manager_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
+    // Tab switching with number keys
+    match code {
+        KeyCode::Char('1') => {
+            app.chat_manager_tab = app::ChatManagerTab::Members;
+            return;
+        }
+        KeyCode::Char('2') => {
+            app.chat_manager_tab = app::ChatManagerTab::Rename;
+            return;
+        }
+        KeyCode::Char('3') => {
+            app.chat_manager_tab = app::ChatManagerTab::AddMember;
+            return;
+        }
+        KeyCode::Esc => {
+            app.close_dialog();
+            return;
+        }
+        _ => {}
+    }
+
+    match app.chat_manager_tab {
+        app::ChatManagerTab::Members => {
+            handle_chat_manager_members_keys(app, graph, bg_tx, code).await;
+        }
+        app::ChatManagerTab::Rename => {
+            handle_chat_manager_rename_keys(app, graph, code).await;
+        }
+        app::ChatManagerTab::AddMember => {
+            handle_chat_manager_add_keys(app, graph, bg_tx, code).await;
+        }
+    }
+}
+
+async fn handle_chat_manager_members_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
+    match code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.chat_manager_selected_member =
+                app.chat_manager_selected_member.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if !app.chat_manager_members.is_empty() {
+                app.chat_manager_selected_member = (app.chat_manager_selected_member + 1)
+                    .min(app.chat_manager_members.len().saturating_sub(1));
+            }
+        }
+        KeyCode::Char('x') => {
+            // Remove selected member
+            if let Some(member) = app
+                .chat_manager_members
+                .get(app.chat_manager_selected_member)
+            {
+                let my_id = app.current_user_id().to_string();
+                if member.user_id.as_deref() == Some(my_id.as_str()) {
+                    app.status_message = "Use 'l' to leave the chat instead".to_string();
+                    return;
+                }
+                if let (Some(chat_id), Some(membership_id)) =
+                    (app.selected_chat_id().map(String::from), member.id.clone())
+                {
+                    let g = graph.clone_for_background();
+                    let tx = bg_tx.clone();
+                    let cid = chat_id.clone();
+                    tokio::spawn(async move {
+                        match g.remove_chat_member(&cid, &membership_id).await {
+                            Ok(()) => {
+                                let _ = tx.send(BgResult::ChatManagerAction(
+                                    "Member removed".to_string(),
+                                ));
+                                // Reload members
+                                if let Ok(members) = g.get_chat_members(&cid).await {
+                                    let _ = tx.send(BgResult::ChatMembers(members));
+                                }
+                            }
+                            Err(e) => {
+                                let _ = tx.send(BgResult::ChatManagerError(e.to_string()));
+                            }
+                        }
+                    });
+                }
+            }
+        }
+        KeyCode::Char('l') => {
+            // Leave chat
+            if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+                let my_id = app.current_user_id().to_string();
+                // Find our membership ID
+                if let Some(my_membership) = app
+                    .chat_manager_members
+                    .iter()
+                    .find(|m| m.user_id.as_deref() == Some(my_id.as_str()))
+                {
+                    if let Some(membership_id) = my_membership.id.clone() {
+                        let g = graph.clone_for_background();
+                        let tx = bg_tx.clone();
+                        tokio::spawn(async move {
+                            match g.remove_chat_member(&chat_id, &membership_id).await {
+                                Ok(()) => {
+                                    let _ = tx.send(BgResult::ChatManagerAction(
+                                        "Left the chat".to_string(),
+                                    ));
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(BgResult::ChatManagerError(
+                                        format!("Failed to leave: {}", e),
+                                    ));
+                                }
+                            }
+                        });
+                        app.close_dialog();
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn handle_chat_manager_rename_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    code: KeyCode,
+) {
+    match code {
+        KeyCode::Enter => {
+            if !app.chat_manager_rename_input.is_empty() {
+                if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+                    let new_topic = app.chat_manager_rename_input.clone();
+                    match graph.rename_chat(&chat_id, &new_topic).await {
+                        Ok(()) => {
+                            // Update local state
+                            if let Some(chat) = app.chats.get_mut(app.selected_chat) {
+                                chat.topic = Some(new_topic.clone());
+                            }
+                            app.status_message = format!("Chat renamed to \"{}\"", new_topic);
+                            app.close_dialog();
+                        }
+                        Err(e) => {
+                            app.status_message = format!("Rename failed: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            app.chat_manager_rename_input
+                .insert(app.chat_manager_rename_cursor, c);
+            app.chat_manager_rename_cursor += 1;
+        }
+        KeyCode::Backspace => {
+            if app.chat_manager_rename_cursor > 0 {
+                app.chat_manager_rename_cursor -= 1;
+                app.chat_manager_rename_input
+                    .remove(app.chat_manager_rename_cursor);
+            }
+        }
+        KeyCode::Left => {
+            app.chat_manager_rename_cursor =
+                app.chat_manager_rename_cursor.saturating_sub(1);
+        }
+        KeyCode::Right => {
+            if app.chat_manager_rename_cursor < app.chat_manager_rename_input.len() {
+                app.chat_manager_rename_cursor += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn handle_chat_manager_add_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
+    match code {
+        KeyCode::Enter => {
+            let user_id = if !app.chat_manager_add_suggestions.is_empty() {
+                let selected = app.chat_manager_add_selected;
+                app.chat_manager_add_suggestions
+                    .get(selected)
+                    .map(|s| s.id.clone())
+            } else if !app.chat_manager_add_input.is_empty() {
+                Some(app.chat_manager_add_input.clone())
+            } else {
+                None
+            };
+            if let (Some(uid), Some(chat_id)) =
+                (user_id, app.selected_chat_id().map(String::from))
+            {
+                let g = graph.clone_for_background();
+                let tx = bg_tx.clone();
+                let cid = chat_id.clone();
+                tokio::spawn(async move {
+                    match g.add_chat_member(&cid, &uid).await {
+                        Ok(()) => {
+                            let _ = tx.send(BgResult::ChatManagerAction(
+                                "Member added".to_string(),
+                            ));
+                            if let Ok(members) = g.get_chat_members(&cid).await {
+                                let _ = tx.send(BgResult::ChatMembers(members));
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(BgResult::ChatManagerError(e.to_string()));
+                        }
+                    }
+                });
+                app.chat_manager_add_input.clear();
+                app.chat_manager_add_cursor = 0;
+                app.chat_manager_add_suggestions.clear();
+                app.chat_manager_add_selected = 0;
+            }
+        }
+        KeyCode::Up => {
+            if !app.chat_manager_add_suggestions.is_empty() {
+                app.chat_manager_add_selected =
+                    app.chat_manager_add_selected.saturating_sub(1);
+            }
+        }
+        KeyCode::Down => {
+            if !app.chat_manager_add_suggestions.is_empty() {
+                app.chat_manager_add_selected = (app.chat_manager_add_selected + 1)
+                    .min(app.chat_manager_add_suggestions.len().saturating_sub(1));
+            }
+        }
+        KeyCode::Char(c) => {
+            app.chat_manager_add_input
+                .insert(app.chat_manager_add_cursor, c);
+            app.chat_manager_add_cursor += 1;
+            app.chat_manager_add_suggestions.clear();
+            app.chat_manager_add_selected = 0;
+            // Trigger user search if >= 2 chars
+            if app.chat_manager_add_input.len() >= 2 {
+                let query = app.chat_manager_add_input.clone();
+                if let Ok(users) = graph.search_users(&query).await {
+                    app.chat_manager_add_suggestions = users
+                        .into_iter()
+                        .map(|u| app::UserSuggestion {
+                            display_name: u.display_name.clone(),
+                            email: u
+                                .mail
+                                .clone()
+                                .or_else(|| u.user_principal_name.clone())
+                                .unwrap_or_default(),
+                            id: u.id.clone(),
+                        })
+                        .collect();
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if app.chat_manager_add_cursor > 0 {
+                app.chat_manager_add_cursor -= 1;
+                app.chat_manager_add_input
+                    .remove(app.chat_manager_add_cursor);
+                app.chat_manager_add_suggestions.clear();
+                app.chat_manager_add_selected = 0;
+            }
+        }
+        KeyCode::Left => {
+            app.chat_manager_add_cursor =
+                app.chat_manager_add_cursor.saturating_sub(1);
+        }
+        KeyCode::Right => {
+            if app.chat_manager_add_cursor < app.chat_manager_add_input.len() {
+                app.chat_manager_add_cursor += 1;
             }
         }
         _ => {}

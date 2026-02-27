@@ -87,6 +87,7 @@ mod chat_tests {
             members: members.map(|m| {
                 m.into_iter()
                     .map(|(name, id)| ChatMember {
+                        id: None,
                         display_name: Some(name.to_string()),
                         user_id: Some(id.to_string()),
                     })
@@ -895,5 +896,55 @@ mod search_response_tests {
         };
         assert_eq!(hit.summary_text(), "");
         assert_eq!(hit.formatted_time(), "");
+    }
+}
+
+#[cfg(test)]
+mod chat_member_deserialization_tests {
+    use ttyms::models::ChatMember;
+
+    #[test]
+    fn deserialize_chat_member_with_id() {
+        let json = r#"{
+            "id": "membership-123",
+            "displayName": "Alice Smith",
+            "userId": "user-456"
+        }"#;
+        let m: ChatMember = serde_json::from_str(json).unwrap();
+        assert_eq!(m.id.as_deref(), Some("membership-123"));
+        assert_eq!(m.display_name.as_deref(), Some("Alice Smith"));
+        assert_eq!(m.user_id.as_deref(), Some("user-456"));
+    }
+
+    #[test]
+    fn deserialize_chat_member_minimal() {
+        let json = r#"{}"#;
+        let m: ChatMember = serde_json::from_str(json).unwrap();
+        assert!(m.id.is_none());
+        assert!(m.display_name.is_none());
+        assert!(m.user_id.is_none());
+    }
+
+    #[test]
+    fn deserialize_chat_member_from_graph_response() {
+        let json = r#"{
+            "value": [
+                {
+                    "id": "m1",
+                    "displayName": "Alice",
+                    "userId": "u1"
+                },
+                {
+                    "id": "m2",
+                    "displayName": "Bob",
+                    "userId": "u2"
+                }
+            ]
+        }"#;
+        let resp: ttyms::models::GraphResponse<ChatMember> =
+            serde_json::from_str(json).unwrap();
+        assert_eq!(resp.value.len(), 2);
+        assert_eq!(resp.value[0].display_name.as_deref(), Some("Alice"));
+        assert_eq!(resp.value[1].id.as_deref(), Some("m2"));
     }
 }

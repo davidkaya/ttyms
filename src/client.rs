@@ -122,6 +122,37 @@ impl GraphClient {
         Ok(())
     }
 
+    async fn patch_no_content(&self, url: &str, body: &serde_json::Value) -> Result<()> {
+        let resp = self
+            .client
+            .patch(url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .json(body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Graph API error ({}): {}", status, text);
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, url: &str) -> Result<()> {
+        let resp = self
+            .client
+            .delete(url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Graph API error ({}): {}", status, body);
+        }
+        Ok(())
+    }
+
     // ---- User & Profile ----
 
     pub async fn get_me(&self) -> Result<User> {
@@ -280,6 +311,52 @@ impl GraphClient {
         );
         let resp: GraphResponse<User> = self.get(&url).await?;
         Ok(resp.value)
+    }
+
+    // ---- Chat management ----
+
+    pub async fn get_chat_members(&self, chat_id: &str) -> Result<Vec<ChatMember>> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/me/chats/{}/members",
+            chat_id
+        );
+        let resp: GraphResponse<ChatMember> = self.get(&url).await?;
+        Ok(resp.value)
+    }
+
+    pub async fn rename_chat(&self, chat_id: &str, topic: &str) -> Result<()> {
+        let url = format!("https://graph.microsoft.com/v1.0/chats/{}", chat_id);
+        let body = serde_json::json!({ "topic": topic });
+        self.patch_no_content(&url, &body).await
+    }
+
+    pub async fn add_chat_member(
+        &self,
+        chat_id: &str,
+        user_id: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/chats/{}/members",
+            chat_id
+        );
+        let body = serde_json::json!({
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            "roles": ["owner"],
+            "user@odata.bind": format!("https://graph.microsoft.com/v1.0/users('{}')", user_id)
+        });
+        self.post_no_content(&url, &body).await
+    }
+
+    pub async fn remove_chat_member(
+        &self,
+        chat_id: &str,
+        membership_id: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/chats/{}/members/{}",
+            chat_id, membership_id
+        );
+        self.delete(&url).await
     }
 
     // ---- Reactions ----

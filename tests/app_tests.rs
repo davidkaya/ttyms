@@ -1526,3 +1526,155 @@ mod search_tests {
         assert!(matches!(app.dialog, DialogMode::None));
     }
 }
+
+#[cfg(test)]
+mod chat_manager_tests {
+    use ttyms::app::{App, ChatManagerTab, DialogMode};
+    use ttyms::models::{Chat, ChatMember};
+
+    fn make_chat(id: &str) -> Chat {
+        Chat {
+            id: id.to_string(),
+            topic: Some("Test Group".to_string()),
+            chat_type: "group".to_string(),
+            members: None,
+            last_message_preview: None,
+            unread_message_count: None,
+        }
+    }
+
+    fn make_member(name: &str, user_id: &str, membership_id: &str) -> ChatMember {
+        ChatMember {
+            id: Some(membership_id.to_string()),
+            display_name: Some(name.to_string()),
+            user_id: Some(user_id.to_string()),
+        }
+    }
+
+    #[test]
+    fn open_chat_manager_sets_dialog() {
+        let mut app = App::new();
+        app.open_chat_manager();
+        assert!(matches!(app.dialog, DialogMode::ChatManager));
+        assert_eq!(app.chat_manager_tab, ChatManagerTab::Members);
+        assert!(app.chat_manager_members.is_empty());
+        assert!(app.chat_manager_loading);
+    }
+
+    #[test]
+    fn open_chat_manager_clears_previous_state() {
+        let mut app = App::new();
+        app.chat_manager_rename_input = "old name".to_string();
+        app.chat_manager_rename_cursor = 5;
+        app.chat_manager_add_input = "old query".to_string();
+        app.open_chat_manager();
+        assert!(app.chat_manager_rename_input.is_empty());
+        assert_eq!(app.chat_manager_rename_cursor, 0);
+        assert!(app.chat_manager_add_input.is_empty());
+    }
+
+    #[test]
+    fn tab_switching() {
+        let mut app = App::new();
+        app.open_chat_manager();
+        assert_eq!(app.chat_manager_tab, ChatManagerTab::Members);
+        app.chat_manager_tab = ChatManagerTab::Rename;
+        assert_eq!(app.chat_manager_tab, ChatManagerTab::Rename);
+        app.chat_manager_tab = ChatManagerTab::AddMember;
+        assert_eq!(app.chat_manager_tab, ChatManagerTab::AddMember);
+    }
+
+    #[test]
+    fn member_list_navigation() {
+        let mut app = App::new();
+        app.open_chat_manager();
+        app.chat_manager_loading = false;
+        app.chat_manager_members = vec![
+            make_member("Alice", "u1", "m1"),
+            make_member("Bob", "u2", "m2"),
+            make_member("Charlie", "u3", "m3"),
+        ];
+        assert_eq!(app.chat_manager_selected_member, 0);
+
+        app.chat_manager_selected_member = (app.chat_manager_selected_member + 1)
+            .min(app.chat_manager_members.len().saturating_sub(1));
+        assert_eq!(app.chat_manager_selected_member, 1);
+
+        app.chat_manager_selected_member = (app.chat_manager_selected_member + 1)
+            .min(app.chat_manager_members.len().saturating_sub(1));
+        assert_eq!(app.chat_manager_selected_member, 2);
+
+        // Stays at end
+        app.chat_manager_selected_member = (app.chat_manager_selected_member + 1)
+            .min(app.chat_manager_members.len().saturating_sub(1));
+        assert_eq!(app.chat_manager_selected_member, 2);
+
+        // Move back up
+        app.chat_manager_selected_member = app.chat_manager_selected_member.saturating_sub(1);
+        assert_eq!(app.chat_manager_selected_member, 1);
+    }
+
+    #[test]
+    fn selected_chat_topic_returns_topic() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("c1")];
+        app.selected_chat = 0;
+        assert_eq!(app.selected_chat_topic(), "Test Group");
+    }
+
+    #[test]
+    fn selected_chat_topic_empty_when_none() {
+        let mut app = App::new();
+        let mut chat = make_chat("c1");
+        chat.topic = None;
+        app.chats = vec![chat];
+        app.selected_chat = 0;
+        assert_eq!(app.selected_chat_topic(), "");
+    }
+
+    #[test]
+    fn selected_chat_is_group() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("c1")];
+        app.selected_chat = 0;
+        assert!(app.selected_chat_is_group());
+    }
+
+    #[test]
+    fn selected_chat_is_not_group() {
+        let mut app = App::new();
+        let mut chat = make_chat("c1");
+        chat.chat_type = "oneOnOne".to_string();
+        app.chats = vec![chat];
+        app.selected_chat = 0;
+        assert!(!app.selected_chat_is_group());
+    }
+
+    #[test]
+    fn close_chat_manager() {
+        let mut app = App::new();
+        app.open_chat_manager();
+        app.close_dialog();
+        assert!(matches!(app.dialog, DialogMode::None));
+    }
+
+    #[test]
+    fn rename_input_editing() {
+        let mut app = App::new();
+        app.open_chat_manager();
+        app.chat_manager_tab = ChatManagerTab::Rename;
+
+        // Type a name
+        for c in "New Name".chars() {
+            app.chat_manager_rename_input.insert(app.chat_manager_rename_cursor, c);
+            app.chat_manager_rename_cursor += 1;
+        }
+        assert_eq!(app.chat_manager_rename_input, "New Name");
+        assert_eq!(app.chat_manager_rename_cursor, 8);
+
+        // Backspace
+        app.chat_manager_rename_cursor -= 1;
+        app.chat_manager_rename_input.remove(app.chat_manager_rename_cursor);
+        assert_eq!(app.chat_manager_rename_input, "New Nam");
+    }
+}

@@ -32,6 +32,7 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Settings dialog** — configurable refresh interval via in-app settings
 - **Delta-based message sync** — incremental message updates via Graph delta queries
 - **Message search** — full-text search across chats via Microsoft Search API (`/search/query`)
+- **Chat management** — rename group chats, view/add/remove members, leave chats via `g` key
 
 ---
 
@@ -109,12 +110,12 @@ Render inline images in the terminal using unicode block characters or sixel pro
 - ~~`POST /search/query` — Microsoft Search API with `chatMessage` entity type~~
 - ~~Scope: `Chat.Read`~~
 
-### Chat management
-Rename group chats, add/remove members, leave a chat.
-- `PATCH /me/chats/{id}` — update topic
-- `POST /me/chats/{id}/members` — add member
-- `DELETE /me/chats/{id}/members/{id}` — remove member
-- `DELETE /me/chats/{id}/members/{myId}` — leave chat
+### ~~Chat management~~ ✅
+~~Rename group chats, add/remove members, leave a chat.~~
+- ~~`PATCH /me/chats/{id}` — update topic~~
+- ~~`POST /me/chats/{id}/members` — add member~~
+- ~~`DELETE /me/chats/{id}/members/{id}` — remove member~~
+- ~~`DELETE /me/chats/{id}/members/{myId}` — leave chat~~
 
 ### Create group chats
 Create new group conversations (not just 1:1).

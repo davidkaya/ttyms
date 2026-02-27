@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::models::{Channel, ChannelMember, Chat, Message, SearchHit, Team, User};
+use crate::models::{Channel, ChannelMember, Chat, ChatMember, Message, SearchHit, Team, User};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -8,6 +8,13 @@ pub struct UserSuggestion {
     pub display_name: String,
     pub email: String,
     pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChatManagerTab {
+    Members,
+    Rename,
+    AddMember,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +53,7 @@ pub enum DialogMode {
     PresencePicker,
     Settings,
     Search,
+    ChatManager,
     Error(ErrorInfo),
 }
 
@@ -153,6 +161,18 @@ pub struct App {
     pub search_results: Vec<SearchHit>,
     pub selected_search_result: usize,
     pub search_loading: bool,
+
+    // Chat manager
+    pub chat_manager_tab: ChatManagerTab,
+    pub chat_manager_members: Vec<ChatMember>,
+    pub chat_manager_selected_member: usize,
+    pub chat_manager_rename_input: String,
+    pub chat_manager_rename_cursor: usize,
+    pub chat_manager_add_input: String,
+    pub chat_manager_add_cursor: usize,
+    pub chat_manager_add_suggestions: Vec<UserSuggestion>,
+    pub chat_manager_add_selected: usize,
+    pub chat_manager_loading: bool,
 }
 
 impl App {
@@ -218,6 +238,16 @@ impl App {
             search_results: Vec::new(),
             selected_search_result: 0,
             search_loading: false,
+            chat_manager_tab: ChatManagerTab::Members,
+            chat_manager_members: Vec::new(),
+            chat_manager_selected_member: 0,
+            chat_manager_rename_input: String::new(),
+            chat_manager_rename_cursor: 0,
+            chat_manager_add_input: String::new(),
+            chat_manager_add_cursor: 0,
+            chat_manager_add_suggestions: Vec::new(),
+            chat_manager_add_selected: 0,
+            chat_manager_loading: false,
         }
     }
 
@@ -562,6 +592,35 @@ impl App {
         self.search_results.clear();
         self.selected_search_result = 0;
         self.search_loading = false;
+    }
+
+    pub fn open_chat_manager(&mut self) {
+        self.dialog = DialogMode::ChatManager;
+        self.chat_manager_tab = ChatManagerTab::Members;
+        self.chat_manager_members.clear();
+        self.chat_manager_selected_member = 0;
+        self.chat_manager_rename_input.clear();
+        self.chat_manager_rename_cursor = 0;
+        self.chat_manager_add_input.clear();
+        self.chat_manager_add_cursor = 0;
+        self.chat_manager_add_suggestions.clear();
+        self.chat_manager_add_selected = 0;
+        self.chat_manager_loading = true;
+    }
+
+    #[allow(dead_code)]
+    pub fn selected_chat_is_group(&self) -> bool {
+        self.chats
+            .get(self.selected_chat)
+            .map(|c| c.chat_type == "group")
+            .unwrap_or(false)
+    }
+
+    pub fn selected_chat_topic(&self) -> String {
+        self.chats
+            .get(self.selected_chat)
+            .and_then(|c| c.topic.clone())
+            .unwrap_or_default()
     }
 
     pub fn navigate_to_chat(&mut self, chat_id: &str) -> bool {

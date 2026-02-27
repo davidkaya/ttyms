@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, AppScreen, DialogMode, Panel, TeamsPanel, ViewMode};
+use crate::app::{App, AppScreen, ChatManagerTab, DialogMode, Panel, TeamsPanel, ViewMode};
 use crate::models::{self, RichSegment};
 
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -115,6 +115,7 @@ fn draw_main(frame: &mut Frame, app: &App) {
         DialogMode::PresencePicker => draw_presence_picker(frame, app),
         DialogMode::Settings => draw_settings_dialog(frame, app),
         DialogMode::Search => draw_search_dialog(frame, app),
+        DialogMode::ChatManager => draw_chat_manager_dialog(frame, app),
         DialogMode::Error(info) => draw_error_dialog(frame, info),
         DialogMode::None => {}
     }
@@ -815,6 +816,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             match app.active_panel {
                 Panel::ChatList => {
                     add_shortcut("n", "New Chat", &mut spans);
+                    add_shortcut("g", "Manage Chat", &mut spans);
                     add_shortcut("r", "Refresh", &mut spans);
                 }
                 Panel::Messages => {
@@ -1234,6 +1236,190 @@ fn draw_search_dialog(frame: &mut Frame, app: &App) {
 
     let cursor_pos = app.search_input[..app.search_cursor].chars().count() as u16;
     frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y + 1));
+}
+
+fn draw_chat_manager_dialog(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+
+    let content_height = match app.chat_manager_tab {
+        ChatManagerTab::Members => 5 + app.chat_manager_members.len().min(10) as u16,
+        ChatManagerTab::Rename => 8,
+        ChatManagerTab::AddMember => {
+            let sug = app.chat_manager_add_suggestions.len().min(6) as u16;
+            if sug > 0 { 9 + sug } else { 8 }
+        }
+    };
+    let dialog_height = content_height.min(area.height.saturating_sub(4));
+    let popup = centered_rect(65, dialog_height, area);
+    frame.render_widget(Clear, popup);
+
+    let title = match app.chat_manager_tab {
+        ChatManagerTab::Members => " Chat Members ",
+        ChatManagerTab::Rename => " Rename Chat ",
+        ChatManagerTab::AddMember => " Add Member ",
+    };
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Tab bar
+    let tabs: Vec<Span> = vec![
+        tab_span("1:Members", app.chat_manager_tab == ChatManagerTab::Members),
+        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+        tab_span("2:Rename", app.chat_manager_tab == ChatManagerTab::Rename),
+        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+        tab_span("3:Add", app.chat_manager_tab == ChatManagerTab::AddMember),
+    ];
+    lines.push(Line::from(tabs));
+    lines.push(Line::from(""));
+
+    match app.chat_manager_tab {
+        ChatManagerTab::Members => {
+            if app.chat_manager_loading {
+                lines.push(Line::from(Span::styled(
+                    "Loading members…",
+                    Style::default().fg(Color::Yellow),
+                )));
+            } else if app.chat_manager_members.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "No members found",
+                    Style::default().fg(Color::DarkGray),
+                )));
+            } else {
+                let my_id = app.current_user_id().to_string();
+                for (i, m) in app.chat_manager_members.iter().take(10).enumerate() {
+                    let is_selected = i == app.chat_manager_selected_member;
+                    let indicator = if is_selected { "▸ " } else { "  " };
+                    let name = m.display_name.as_deref().unwrap_or("Unknown");
+                    let is_me = m.user_id.as_deref() == Some(my_id.as_str());
+                    let suffix = if is_me { " (you)" } else { "" };
+                    let style = if is_selected {
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(indicator, style),
+                        Span::styled(format!("{}{}", name, suffix), style),
+                    ]));
+                }
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "↑↓: select  │  x: remove  │  l: leave chat  │  Esc: close",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        ChatManagerTab::Rename => {
+            let display_input = if app.chat_manager_rename_input.is_empty() {
+                "Enter new chat name…"
+            } else {
+                &app.chat_manager_rename_input
+            };
+            let input_style = if app.chat_manager_rename_input.is_empty() {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(
+                "New name:",
+                Style::default().fg(Color::Gray),
+            )));
+            lines.push(Line::from(vec![
+                Span::styled("> ", Style::default().fg(Color::Cyan)),
+                Span::styled(display_input, input_style),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Enter: save  │  Esc: close",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        ChatManagerTab::AddMember => {
+            let display_input = if app.chat_manager_add_input.is_empty() {
+                "Start typing a name or email…"
+            } else {
+                &app.chat_manager_add_input
+            };
+            let input_style = if app.chat_manager_add_input.is_empty() {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(
+                "User:",
+                Style::default().fg(Color::Gray),
+            )));
+            lines.push(Line::from(vec![
+                Span::styled("> ", Style::default().fg(Color::Cyan)),
+                Span::styled(display_input, input_style),
+            ]));
+
+            if !app.chat_manager_add_suggestions.is_empty() {
+                lines.push(Line::from(""));
+                for (i, s) in app.chat_manager_add_suggestions.iter().enumerate() {
+                    let is_selected = i == app.chat_manager_add_selected;
+                    let indicator = if is_selected { "▸ " } else { "  " };
+                    let style = if is_selected {
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    let email_str = format!("  <{}>", s.email);
+                    lines.push(Line::from(vec![
+                        Span::styled(indicator, style),
+                        Span::styled(&s.display_name, style),
+                        Span::styled(email_str, Style::default().fg(Color::DarkGray)),
+                    ]));
+                }
+            }
+
+            lines.push(Line::from(""));
+            let hint = if app.chat_manager_add_suggestions.is_empty() {
+                "Enter: add by email  │  Esc: close"
+            } else {
+                "↑↓: select  │  Enter: add  │  Esc: close"
+            };
+            lines.push(Line::from(Span::styled(
+                hint,
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+
+    // Set cursor for text input tabs
+    match app.chat_manager_tab {
+        ChatManagerTab::Rename => {
+            let cursor_pos = app.chat_manager_rename_input[..app.chat_manager_rename_cursor]
+                .chars()
+                .count() as u16;
+            frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y + 3));
+        }
+        ChatManagerTab::AddMember => {
+            let cursor_pos = app.chat_manager_add_input[..app.chat_manager_add_cursor]
+                .chars()
+                .count() as u16;
+            frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y + 3));
+        }
+        _ => {}
+    }
+}
+
+fn tab_span(label: &str, active: bool) -> Span<'_> {
+    if active {
+        Span::styled(label, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+    } else {
+        Span::styled(label, Style::default().fg(Color::DarkGray))
+    }
 }
 
 fn draw_error_dialog(frame: &mut Frame, info: &crate::app::ErrorInfo) {

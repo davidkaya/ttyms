@@ -49,6 +49,7 @@ pub struct Chat {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatMember {
+    pub id: Option<String>,
     #[serde(rename = "displayName")]
     pub display_name: Option<String>,
     #[serde(rename = "userId")]
