@@ -121,6 +121,25 @@ pub struct Channel {
     pub membership_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChannelMember {
+    pub id: Option<String>,
+    #[serde(rename = "displayName")]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
+}
+
+impl ChannelMember {
+    pub fn name(&self) -> &str {
+        self.display_name.as_deref().unwrap_or("Unknown")
+    }
+
+    pub fn is_owner(&self) -> bool {
+        self.roles.iter().any(|r| r == "owner")
+    }
+}
+
 // Presence
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
