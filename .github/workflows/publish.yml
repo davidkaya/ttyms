@@ -37,10 +37,16 @@ jobs:
           echo "$NOTES" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body: ${{ steps.changelog.outputs.NOTES }}
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "${TAG}" &>/dev/null; then
+            gh release edit "${TAG}" --notes "${{ steps.changelog.outputs.NOTES }}"
+          else
+            gh release create "${TAG}" --title "${TAG}" --notes "${{ steps.changelog.outputs.NOTES }}"
+          fi
 
   build-binaries:
     needs: create-release
