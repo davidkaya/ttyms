@@ -4,6 +4,8 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 
 ![Rust](https://img.shields.io/badge/Rust-1.75+-orange) ![License](https://img.shields.io/badge/license-MIT-blue)
 
+> **⚠️ Here be dragons!** ttyms is in alpha — part experiment, part playground, part "what if Teams lived in a terminal?" fever dream. Things may break, features may vanish, and your terminal might judge your meeting schedule. Use at your own risk (and enjoyment). 🐉
+
 ## Features
 
 - **1:1 and group chat messaging** — browse all your Teams chats, read messages, and reply
