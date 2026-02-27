@@ -319,7 +319,11 @@ async fn run_app(
                 BgResult::SearchError(err) => {
                     app.search_loading = false;
                     app.search_results.clear();
-                    app.status_message = format!("Search failed: {}", err);
+                    app.show_error(
+                        "Search Failed",
+                        "Could not complete the search query.",
+                        &err,
+                    );
                 }
                 BgResult::ChatMembers(members) => {
                     app.chat_manager_loading = false;
@@ -330,7 +334,11 @@ async fn run_app(
                     app.status_message = msg;
                 }
                 BgResult::ChatManagerError(err) => {
-                    app.status_message = format!("Chat manager: {}", err);
+                    app.show_error(
+                        "Chat Management Failed",
+                        "An error occurred while managing the chat.",
+                        &err,
+                    );
                 }
             }
         }
@@ -1008,7 +1016,11 @@ fn apply_setting(app: &mut app::App, config: &mut config::Config, index: usize, 
         _ => return,
     }
     if let Err(e) = config::save_config(config) {
-        app.status_message = format!("Failed to save config: {}", e);
+        app.show_error(
+            "Save Config Failed",
+            "Could not save your settings.",
+            &e.to_string(),
+        );
     }
 }
 
@@ -1275,7 +1287,11 @@ async fn handle_chat_manager_rename_keys(
                             app.close_dialog();
                         }
                         Err(e) => {
-                            app.status_message = format!("Rename failed: {}", e);
+                            app.show_error(
+                                "Rename Failed",
+                                "Could not rename the chat.",
+                                &e.to_string(),
+                            );
                         }
                     }
                 }
