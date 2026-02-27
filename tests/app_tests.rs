@@ -1289,4 +1289,18 @@ mod channel_members_state {
         app.channel_members.clear();
         assert!(app.channel_members.is_empty());
     }
+
+    #[test]
+    fn channel_permission_denied_starts_false() {
+        let app = App::new();
+        assert!(!app.channel_permission_denied);
+    }
+
+    #[test]
+    fn channel_permission_denied_can_be_set() {
+        let mut app = App::new();
+        app.channel_permission_denied = true;
+        assert!(app.channel_permission_denied);
+        assert!(app.channel_messages.is_empty());
+    }
 }

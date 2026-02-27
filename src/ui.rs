@@ -708,12 +708,51 @@ fn draw_channel_message_area(frame: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     let title = app.selected_channel_name();
-    draw_messages(
-        frame, app, &app.channel_messages, app.channel_scroll_offset,
-        app.selected_channel_message,
-        &title, app.teams_panel == TeamsPanel::ChannelMessages,
-        app.loading_more_messages && app.channel_messages_next_link.is_some(), chunks[0],
-    );
+
+    if app.channel_permission_denied && app.channel_messages.is_empty() {
+        let border_color = if app.teams_panel == TeamsPanel::ChannelMessages {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        };
+        let block = Block::default()
+            .title(format!(" {} ", title))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color));
+        let inner = block.inner(chunks[0]);
+        frame.render_widget(block, chunks[0]);
+
+        let hint = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "⚠ Insufficient permissions",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Reading channel messages requires the ChannelMessage.Read.All",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                "permission, which needs admin consent for your organization.",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Ask your IT admin to grant consent for the ttyms application.",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ])
+        .alignment(Alignment::Center);
+        frame.render_widget(hint, inner);
+    } else {
+        draw_messages(
+            frame, app, &app.channel_messages, app.channel_scroll_offset,
+            app.selected_channel_message,
+            &title, app.teams_panel == TeamsPanel::ChannelMessages,
+            app.loading_more_messages && app.channel_messages_next_link.is_some(), chunks[0],
+        );
+    }
 
     if app.view_mode == ViewMode::Teams {
         if app.is_replying() {

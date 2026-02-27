@@ -117,6 +117,9 @@ pub struct App {
     pub channel_members: Vec<ChannelMember>,
     pub show_members: bool,
 
+    // Permission state
+    pub channel_permission_denied: bool,
+
     // Unread tracking
     pub total_unread: i32,
     pub known_message_ids: HashSet<String>,
@@ -178,6 +181,7 @@ impl App {
             channel_message_cache: HashMap::new(),
             channel_members: Vec::new(),
             show_members: false,
+            channel_permission_denied: false,
             total_unread: 0,
             known_message_ids: HashSet::new(),
             reply_to_message_id: None,

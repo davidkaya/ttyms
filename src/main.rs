@@ -1259,17 +1259,25 @@ async fn load_channel_messages_cached(graph: &client::GraphClient, app: &mut app
     ) {
         match graph.get_channel_messages(&team_id, &channel_id).await {
             Ok((msgs, next_link)) => {
+                app.channel_permission_denied = false;
                 app.channel_message_cache.insert(channel_id, msgs.clone());
                 app.channel_messages = msgs;
                 app.channel_messages_next_link = next_link;
                 app.status_message.clear();
             }
             Err(e) => {
-                app.show_error(
-                    "Load Messages Failed",
-                    "Could not load channel messages.",
-                    &format!("Team: {}\nChannel: {}\nError: {}", team_id, channel_id, e),
-                );
+                let err_str = e.to_string();
+                if err_str.contains("403") {
+                    app.channel_permission_denied = true;
+                    app.channel_messages.clear();
+                    app.channel_messages_next_link = None;
+                } else {
+                    app.show_error(
+                        "Load Messages Failed",
+                        "Could not load channel messages.",
+                        &format!("Team: {}\nChannel: {}\nError: {}", team_id, channel_id, e),
+                    );
+                }
             }
         }
     }
@@ -1290,11 +1298,17 @@ async fn load_and_toggle_members(graph: &client::GraphClient, app: &mut app::App
                 app.status_message.clear();
             }
             Err(e) => {
-                app.show_error(
-                    "Load Members Failed",
-                    "Could not load channel members.",
-                    &format!("Team: {}\nChannel: {}\nError: {}", team_id, channel_id, e),
-                );
+                let err_str = e.to_string();
+                if err_str.contains("403") {
+                    app.show_members = false;
+                    app.status_message = "Members require admin consent".to_string();
+                } else {
+                    app.show_error(
+                        "Load Members Failed",
+                        "Could not load channel members.",
+                        &format!("Team: {}\nChannel: {}\nError: {}", team_id, channel_id, e),
+                    );
+                }
             }
         }
     }
