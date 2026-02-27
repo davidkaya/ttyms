@@ -1,6 +1,6 @@
 # ttyms Roadmap
 
-Feature roadmap for the terminal Microsoft Teams client. All features below are achievable using existing [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/api/resources/teams-api-overview) endpoints with delegated permissions.
+Feature roadmap for the terminal Microsoft Teams client. Most features below are achievable using existing [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/api/resources/teams-api-overview) endpoints with delegated permissions. Items marked ❌ are not feasible with current API capabilities.
 
 ---
 
@@ -55,10 +55,9 @@ Feature roadmap for the terminal Microsoft Teams client. All features below are 
 ### ~~Set your own presence~~ ✅
 ### ~~Desktop notifications~~ ✅ (terminal bell on new messages)
 
-### Typing indicators
-Show "User is typing…" and broadcast your own typing state.
-- `POST /me/chats/{id}/sendActivityNotification` (limited)
-- Realistically requires SignalR/WebSocket subscription (see Phase 5)
+### ~~Typing indicators~~ ❌
+~~Show "User is typing…" and broadcast your own typing state.~~
+- **Not feasible** — Microsoft Graph API does not expose typing indicator endpoints for reading or broadcasting typing state. Would require SignalR/WebSocket which is not available for 3rd-party clients.
 
 ---
 
@@ -125,7 +124,7 @@ Pin important chats to the top, archive inactive ones.
 - `PATCH /me/chats/{id}` — hide/archive
 
 ### Contact / people list
-Browse your frequent contacts and org directory.C:\Users\dvidkaya\AppData\Roaming\ttyms\config.toml.C:\Users\dvidkaya\AppData\Roaming\ttyms\config.toml.
+Browse your frequent contacts and org directory.
 - `GET /me/people` — ranked relevant contacts
 - `GET /me/contacts` — address book
 - Scope: `People.Read`
