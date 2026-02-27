@@ -24,6 +24,10 @@ Feature roadmap for the terminal Microsoft Teams client. All features below are 
 - **Channel browsing** — list channels within a team (standard + private)
 - **Channel messages** — read and post messages in team channels
 - **Tabbed UI** — switch between Chats and Teams views with 1/2 keys
+- **Reply to messages** — quote-reply via `r` key when message selected (chat + channel)
+- **Edit / delete messages** — edit own messages with `w`, soft-delete with `d`
+- **Message pagination** — scroll up to load older messages via `@odata.nextLink`
+- **Homebrew distribution** — `brew install davidkaya/tap/ttyms` with pre-built macOS binaries
 
 ---
 
@@ -35,19 +39,9 @@ Feature roadmap for the terminal Microsoft Teams client. All features below are 
 ### ~~Message read receipts~~ ✅
 ### ~~Message reactions (emoji)~~ ✅
 ### ~~Rich text rendering~~ ✅
-
-### Reply to specific messages
-Quote-reply to a message in a chat thread.
-- `POST /me/chats/{id}/messages` — with `replyToId` in the request body
-
-### Delete / edit sent messages
-Edit or soft-delete your own messages.
-- `PATCH /me/chats/{id}/messages/{id}` — update body content
-- `DELETE /me/chats/{id}/messages/{id}` (soft delete)
-
-### Message pagination (infinite scroll)
-Load older messages when scrolling to the top using `@odata.nextLink`.
-- `GET /me/chats/{id}/messages?$top=50&$skiptoken=...`
+### ~~Reply to specific messages~~ ✅
+### ~~Delete / edit sent messages~~ ✅
+### ~~Message pagination (infinite scroll)~~ ✅
 
 ---
 
@@ -173,6 +167,17 @@ Write messages in markdown, convert to Teams-compatible HTML before sending.
 ### Adaptive Card rendering
 Render incoming Adaptive Cards (approval requests, forms, polls) as structured terminal UI.
 - Parse `attachment` objects with `contentType: "application/vnd.microsoft.card.adaptive"`
+
+---
+
+## 📦 Distribution
+
+### ~~Homebrew (macOS)~~ ✅
+Publish ttyms as a Homebrew formula for easy installation on macOS.
+- Create a Homebrew tap repository (`homebrew-tap`)
+- Add formula with `cargo install` or pre-built binaries from GitHub Releases
+- Support `brew install ttyms` for one-command installation
+- Auto-update formula on new GitHub Releases via CI
 
 ---
 
