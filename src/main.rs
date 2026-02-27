@@ -872,7 +872,13 @@ async fn load_messages(graph: &client::GraphClient, app: &mut app::App) {
                 app.detect_new_messages();
                 app.status_message.clear();
             }
-            Err(e) => app.status_message = format!("Error: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Load Messages Failed",
+                    "Could not load messages for this chat.",
+                    &format!("Chat: {}\nError: {}", chat_id, e),
+                );
+            }
         }
         // Mark chat as read (best-effort)
         let user_id = app.current_user_id().to_string();
@@ -888,7 +894,13 @@ async fn load_older_messages(graph: &client::GraphClient, app: &mut app::App) {
                 app.messages_next_link = next;
                 app.prepend_older_messages(older);
             }
-            Err(e) => app.status_message = format!("Load more: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Load More Failed",
+                    "Could not load older messages.",
+                    &format!("Error: {}", e),
+                );
+            }
         }
         app.loading_more_messages = false;
     }
@@ -902,7 +914,13 @@ async fn load_older_channel_messages(graph: &client::GraphClient, app: &mut app:
                 app.channel_messages_next_link = next;
                 app.prepend_older_channel_messages(older);
             }
-            Err(e) => app.status_message = format!("Load more: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Load More Failed",
+                    "Could not load older channel messages.",
+                    &format!("Error: {}", e),
+                );
+            }
         }
         app.loading_more_messages = false;
     }
@@ -1076,7 +1094,13 @@ async fn refresh_all(graph: &client::GraphClient, app: &mut app::App) {
             load_messages(graph, app).await;
             app.status_message = "Refreshed".to_string();
         }
-        Err(e) => app.status_message = format!("Refresh failed: {}", e),
+        Err(e) => {
+            app.show_error(
+                "Refresh Failed",
+                "Could not refresh chats.",
+                &format!("Error: {}", e),
+            );
+        }
     }
     app.mark_refreshed();
 }
@@ -1143,7 +1167,13 @@ async fn load_teams_with_preload(
             spawn_channels_preload(graph, app, bg_tx);
             app.status_message.clear();
         }
-        Err(e) => app.status_message = format!("Teams: {}", e),
+        Err(e) => {
+            app.show_error(
+                "Load Teams Failed",
+                "Could not load your teams.",
+                &format!("Error: {}", e),
+            );
+        }
     }
 }
 
@@ -1183,7 +1213,13 @@ async fn load_channels_with_preload(
                     spawn_channel_messages_preload(graph, app, &team_id, bg_tx);
                 }
             }
-            Err(e) => app.status_message = format!("Channels: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Load Channels Failed",
+                    "Could not load channels for this team.",
+                    &format!("Team: {}\nError: {}", team_id, e),
+                );
+            }
         }
     }
 }
@@ -1228,7 +1264,13 @@ async fn load_channel_messages_cached(graph: &client::GraphClient, app: &mut app
                 app.channel_messages_next_link = next_link;
                 app.status_message.clear();
             }
-            Err(e) => app.status_message = format!("Messages: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Load Messages Failed",
+                    "Could not load channel messages.",
+                    &format!("Team: {}\nChannel: {}\nError: {}", team_id, channel_id, e),
+                );
+            }
         }
     }
 }
@@ -1247,7 +1289,13 @@ async fn load_and_toggle_members(graph: &client::GraphClient, app: &mut app::App
                 app.channel_members = members;
                 app.status_message.clear();
             }
-            Err(e) => app.status_message = format!("Members: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Load Members Failed",
+                    "Could not load channel members.",
+                    &format!("Team: {}\nChannel: {}\nError: {}", team_id, channel_id, e),
+                );
+            }
         }
     }
 }
@@ -1262,7 +1310,13 @@ async fn send_channel_message(graph: &client::GraphClient, app: &mut app::App, c
                 app.status_message = "Channel message sent".to_string();
                 load_channel_messages_cached(graph, app).await;
             }
-            Err(e) => app.status_message = format!("Send failed: {}", e),
+            Err(e) => {
+                app.show_error(
+                    "Send Failed",
+                    "Could not send channel message.",
+                    &format!("Team: {}\nChannel: {}\nError: {}", team_id, channel_id, e),
+                );
+            }
         }
     }
 }
