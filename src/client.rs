@@ -243,11 +243,12 @@ impl GraphClient {
     }
 
     pub async fn search_users(&self, query: &str) -> Result<Vec<User>> {
+        let escaped = query.replace('\'', "''");
         let url = format!(
             "https://graph.microsoft.com/v1.0/users?\
              $filter=startswith(displayName,'{}') or startswith(mail,'{}') or startswith(userPrincipalName,'{}')&\
              $top=8&$select=id,displayName,mail,userPrincipalName",
-            query, query, query
+            escaped, escaped, escaped
         );
         let resp: GraphResponse<User> = self.get(&url).await?;
         Ok(resp.value)

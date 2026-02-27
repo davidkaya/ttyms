@@ -100,6 +100,11 @@ fn store_token_file(token: &TokenResponse) -> Result<()> {
     let mut json = serde_json::to_string(token)?;
     let path = token_file_path()?;
     std::fs::write(&path, &json)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
     json.zeroize();
     Ok(())
 }
