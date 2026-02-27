@@ -116,6 +116,7 @@ tenant_id = "common"
    - `Channel.ReadBasic.All`
    - `ChannelMessage.Read.All`
    - `ChannelMessage.Send`
+   - `offline_access`
 7. Copy the **Application (client) ID** and set it in your `config.toml`
 
 </details>
