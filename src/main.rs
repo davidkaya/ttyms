@@ -226,8 +226,9 @@ async fn run_app(
 
     // Load messages for the first selected chat
     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
-        if let Ok(messages) = graph.get_messages(&chat_id).await {
+        if let Ok((messages, next_link)) = graph.get_messages(&chat_id).await {
             app.messages = messages;
+            app.messages_next_link = next_link;
             app.detect_new_messages(); // Initialize tracking
         }
     }
@@ -370,8 +371,9 @@ async fn run_app(
                         app.update_total_unread();
                     }
                     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
-                        if let Ok(messages) = graph.get_messages(&chat_id).await {
+                        if let Ok((messages, next_link)) = graph.get_messages(&chat_id).await {
                             app.messages = messages;
+                            app.messages_next_link = next_link;
                             if app.detect_new_messages() {
                                 // Terminal bell for new messages
                                 print!("\x07");
@@ -384,8 +386,9 @@ async fn run_app(
                         app.selected_team_id().map(String::from),
                         app.selected_channel_id().map(String::from),
                     ) {
-                        if let Ok(msgs) = graph.get_channel_messages(&team_id, &channel_id).await {
+                        if let Ok((msgs, next_link)) = graph.get_channel_messages(&team_id, &channel_id).await {
                             app.channel_messages = msgs.clone();
+                            app.channel_messages_next_link = next_link;
                             app.channel_message_cache.insert(channel_id, msgs);
                         }
                     }
@@ -438,6 +441,10 @@ async fn handle_chats_keys(app: &mut app::App, graph: &client::GraphClient, code
                     app.select_message_up();
                 } else {
                     app.scroll_messages_up();
+                    // Load more messages when scrolling near the top
+                    if app.scroll_offset > 0 && app.messages_next_link.is_some() && !app.loading_more_messages {
+                        load_older_messages(graph, app).await;
+                    }
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -458,7 +465,23 @@ async fn handle_chats_keys(app: &mut app::App, graph: &client::GraphClient, code
             KeyCode::Char('e') => {
                 app.open_reaction_picker();
             }
-            KeyCode::Char('r') => load_messages(graph, app).await,
+            KeyCode::Char('r') => {
+                if app.selected_message.is_some() {
+                    app.start_reply();
+                } else {
+                    load_messages(graph, app).await;
+                }
+            }
+            KeyCode::Char('d') => {
+                if app.selected_message.is_some() && app.is_own_selected_message() {
+                    delete_message(graph, app).await;
+                }
+            }
+            KeyCode::Char('w') => {
+                if app.selected_message.is_some() && app.is_own_selected_message() {
+                    app.start_edit();
+                }
+            }
             KeyCode::Esc => {
                 if app.selected_message.is_some() {
                     app.selected_message = None;
@@ -469,13 +492,23 @@ async fn handle_chats_keys(app: &mut app::App, graph: &client::GraphClient, code
             _ => {}
         },
         Panel::Input => match code {
-            KeyCode::Esc => app.active_panel = Panel::ChatList,
+            KeyCode::Esc => {
+                app.cancel_reply();
+                app.cancel_edit();
+                app.active_panel = Panel::ChatList;
+            }
             KeyCode::Tab => app.next_panel(),
             KeyCode::BackTab => app.prev_panel(),
             KeyCode::Enter => {
                 let msg = app.take_input();
                 if !msg.is_empty() {
-                    send_message(graph, app, &msg).await;
+                    if let Some(edit_id) = app.editing_message_id.clone() {
+                        edit_message(graph, app, &edit_id, &msg).await;
+                    } else if let Some(reply_id) = app.reply_to_message_id.clone() {
+                        send_reply(graph, app, &reply_id, &msg).await;
+                    } else {
+                        send_message(graph, app, &msg).await;
+                    }
                 }
             }
             KeyCode::Char(c) => app.insert_char(c),
@@ -548,6 +581,9 @@ async fn handle_teams_keys(
                     app.select_channel_message_up();
                 } else {
                     app.channel_scroll_up();
+                    if app.channel_scroll_offset > 0 && app.channel_messages_next_link.is_some() && !app.loading_more_messages {
+                        load_older_channel_messages(graph, app).await;
+                    }
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -567,7 +603,23 @@ async fn handle_teams_keys(
             KeyCode::Char('e') => {
                 app.open_reaction_picker();
             }
-            KeyCode::Char('r') => load_channel_messages_cached(graph, app).await,
+            KeyCode::Char('r') => {
+                if app.selected_channel_message.is_some() {
+                    app.start_channel_reply();
+                } else {
+                    load_channel_messages_cached(graph, app).await;
+                }
+            }
+            KeyCode::Char('d') => {
+                if app.selected_channel_message.is_some() && app.is_own_selected_channel_message() {
+                    delete_channel_message(graph, app).await;
+                }
+            }
+            KeyCode::Char('w') => {
+                if app.selected_channel_message.is_some() && app.is_own_selected_channel_message() {
+                    app.start_channel_edit();
+                }
+            }
             KeyCode::Enter => app.teams_panel = TeamsPanel::ChannelInput,
             KeyCode::Esc => {
                 if app.selected_channel_message.is_some() {
@@ -579,13 +631,25 @@ async fn handle_teams_keys(
             _ => {}
         },
         TeamsPanel::ChannelInput => match code {
-            KeyCode::Esc => app.teams_panel = TeamsPanel::ChannelMessages,
+            KeyCode::Esc => {
+                app.cancel_reply();
+                app.cancel_edit();
+                app.teams_panel = TeamsPanel::ChannelMessages;
+            }
             KeyCode::Tab => app.next_teams_panel(),
             KeyCode::BackTab => app.prev_teams_panel(),
             KeyCode::Enter => {
                 let msg = app.take_channel_input();
                 if !msg.is_empty() {
-                    send_channel_message(graph, app, &msg).await;
+                    if app.editing_message_id.is_some() {
+                        // Channel message editing not supported by Graph API v1.0
+                        app.status_message = "Channel message editing not supported".to_string();
+                        app.cancel_edit();
+                    } else if let Some(reply_id) = app.reply_to_message_id.clone() {
+                        send_channel_reply(graph, app, &reply_id, &msg).await;
+                    } else {
+                        send_channel_message(graph, app, &msg).await;
+                    }
                 }
             }
             KeyCode::Char(c) => app.channel_insert_char(c),
@@ -794,10 +858,13 @@ async fn handle_presence_picker_keys(
 async fn load_messages(graph: &client::GraphClient, app: &mut app::App) {
     app.scroll_offset = 0;
     app.selected_message = None;
+    app.cancel_reply();
+    app.cancel_edit();
     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
         match graph.get_messages(&chat_id).await {
-            Ok(messages) => {
+            Ok((messages, next_link)) => {
                 app.messages = messages;
+                app.messages_next_link = next_link;
                 app.detect_new_messages();
                 app.status_message.clear();
             }
@@ -806,6 +873,34 @@ async fn load_messages(graph: &client::GraphClient, app: &mut app::App) {
         // Mark chat as read (best-effort)
         let user_id = app.current_user_id().to_string();
         let _ = graph.mark_chat_read(&chat_id, &user_id).await;
+    }
+}
+
+async fn load_older_messages(graph: &client::GraphClient, app: &mut app::App) {
+    if let Some(next_link) = app.messages_next_link.clone() {
+        app.loading_more_messages = true;
+        match graph.get_messages_page(&next_link).await {
+            Ok((older, next)) => {
+                app.messages_next_link = next;
+                app.prepend_older_messages(older);
+            }
+            Err(e) => app.status_message = format!("Load more: {}", e),
+        }
+        app.loading_more_messages = false;
+    }
+}
+
+async fn load_older_channel_messages(graph: &client::GraphClient, app: &mut app::App) {
+    if let Some(next_link) = app.channel_messages_next_link.clone() {
+        app.loading_more_messages = true;
+        match graph.get_messages_page(&next_link).await {
+            Ok((older, next)) => {
+                app.channel_messages_next_link = next;
+                app.prepend_older_channel_messages(older);
+            }
+            Err(e) => app.status_message = format!("Load more: {}", e),
+        }
+        app.loading_more_messages = false;
     }
 }
 
@@ -825,6 +920,115 @@ async fn send_message(graph: &client::GraphClient, app: &mut app::App, content: 
             }
         }
     }
+}
+
+async fn send_reply(
+    graph: &client::GraphClient,
+    app: &mut app::App,
+    reply_to_id: &str,
+    content: &str,
+) {
+    if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        match graph.send_reply(&chat_id, reply_to_id, content).await {
+            Ok(_) => {
+                app.status_message = "Reply sent".to_string();
+                app.cancel_reply();
+                load_messages(graph, app).await;
+            }
+            Err(e) => {
+                app.show_error(
+                    "Reply Failed",
+                    "Could not send your reply.",
+                    &format!("Chat: {}\nReplyTo: {}\nError: {}", chat_id, reply_to_id, e),
+                );
+            }
+        }
+    }
+}
+
+async fn edit_message(
+    graph: &client::GraphClient,
+    app: &mut app::App,
+    message_id: &str,
+    content: &str,
+) {
+    if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        match graph.update_message(&chat_id, message_id, content).await {
+            Ok(_) => {
+                app.status_message = "Message edited".to_string();
+                app.cancel_edit();
+                load_messages(graph, app).await;
+            }
+            Err(e) => {
+                app.show_error(
+                    "Edit Failed",
+                    "Could not edit your message.",
+                    &format!("Chat: {}\nMessage: {}\nError: {}", chat_id, message_id, e),
+                );
+            }
+        }
+    }
+}
+
+async fn delete_message(graph: &client::GraphClient, app: &mut app::App) {
+    if let (Some(chat_id), Some(msg_id)) = (
+        app.selected_chat_id().map(String::from),
+        app.selected_message_id().map(String::from),
+    ) {
+        match graph.soft_delete_message(&chat_id, &msg_id).await {
+            Ok(_) => {
+                app.status_message = "Message deleted".to_string();
+                app.selected_message = None;
+                load_messages(graph, app).await;
+            }
+            Err(e) => {
+                app.show_error(
+                    "Delete Failed",
+                    "Could not delete the message.",
+                    &format!("Chat: {}\nMessage: {}\nError: {}", chat_id, msg_id, e),
+                );
+            }
+        }
+    }
+}
+
+async fn send_channel_reply(
+    graph: &client::GraphClient,
+    app: &mut app::App,
+    reply_to_id: &str,
+    content: &str,
+) {
+    if let (Some(team_id), Some(channel_id)) = (
+        app.selected_team_id().map(String::from),
+        app.selected_channel_id().map(String::from),
+    ) {
+        match graph
+            .reply_to_channel_message(&team_id, &channel_id, reply_to_id, content)
+            .await
+        {
+            Ok(_) => {
+                app.status_message = "Reply sent".to_string();
+                app.cancel_reply();
+                load_channel_messages_cached(graph, app).await;
+            }
+            Err(e) => {
+                app.show_error(
+                    "Reply Failed",
+                    "Could not send your reply.",
+                    &format!(
+                        "Team: {}\nChannel: {}\nReplyTo: {}\nError: {}",
+                        team_id, channel_id, reply_to_id, e
+                    ),
+                );
+            }
+        }
+    }
+}
+
+async fn delete_channel_message(_graph: &client::GraphClient, app: &mut app::App) {
+    // Channel message deletion is not supported via Graph API v1.0 for user-context
+    app.status_message = "Channel message deletion not supported".to_string();
+    app.selected_channel_message = None;
 }
 
 async fn create_new_chat(graph: &client::GraphClient, app: &mut app::App, email: &str) {
@@ -998,7 +1202,7 @@ fn spawn_channel_messages_preload(
         let tid = team_id.to_string();
         let ch_id = ch.id.clone();
         tokio::spawn(async move {
-            if let Ok(msgs) = bg_graph.get_channel_messages(&tid, &ch_id).await {
+            if let Ok((msgs, _)) = bg_graph.get_channel_messages(&tid, &ch_id).await {
                 let _ = tx.send(BgResult::ChannelMessages(ch_id, msgs));
             }
         });
@@ -1007,14 +1211,17 @@ fn spawn_channel_messages_preload(
 
 async fn load_channel_messages_cached(graph: &client::GraphClient, app: &mut app::App) {
     app.channel_scroll_offset = 0;
+    app.cancel_reply();
+    app.cancel_edit();
     if let (Some(team_id), Some(channel_id)) = (
         app.selected_team_id().map(String::from),
         app.selected_channel_id().map(String::from),
     ) {
         match graph.get_channel_messages(&team_id, &channel_id).await {
-            Ok(msgs) => {
+            Ok((msgs, next_link)) => {
                 app.channel_message_cache.insert(channel_id, msgs.clone());
                 app.channel_messages = msgs;
+                app.channel_messages_next_link = next_link;
                 app.status_message.clear();
             }
             Err(e) => app.status_message = format!("Messages: {}", e),
@@ -1078,9 +1285,11 @@ fn print_help() {
     println!("  n                New chat");
     println!("  s                Select message (in Messages panel)");
     println!("  e                React to selected message");
+    println!("  r                Reply to selected / Refresh (no selection)");
+    println!("  d                Delete selected message (own only)");
+    println!("  w                Edit selected message (own only)");
     println!("  p                Set presence status");
-    println!("  r                Refresh chats and messages");
-    println!("  Esc              Back to chat list / deselect message");
+    println!("  Esc              Back to chat list / deselect / cancel reply/edit");
     println!("  q                Quit");
     println!("  Ctrl+C           Force quit");
     println!();
