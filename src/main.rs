@@ -82,6 +82,11 @@ enum BgResult {
     ChannelMessages(String, Vec<models::Message>),
     PresenceMap(std::collections::HashMap<String, String>),
     MyPresence(String),
+    // Auto-refresh results
+    RefreshedChats(Vec<models::Chat>),
+    RefreshedChatMessages(Vec<models::Message>, Option<String>),
+    RefreshedChannelMessages(String, Vec<models::Message>, Option<String>),
+    TokenRefreshed(String),
 }
 
 #[tokio::main]
@@ -267,6 +272,25 @@ async fn run_app(
                 BgResult::MyPresence(avail) => {
                     app.my_presence = avail;
                 }
+                BgResult::TokenRefreshed(token) => {
+                    graph.set_token(token);
+                }
+                BgResult::RefreshedChats(chats) => {
+                    app.chats = chats;
+                    app.update_total_unread();
+                }
+                BgResult::RefreshedChatMessages(messages, next_link) => {
+                    app.messages = messages;
+                    app.messages_next_link = next_link;
+                    if app.detect_new_messages() {
+                        print!("\x07");
+                    }
+                }
+                BgResult::RefreshedChannelMessages(channel_id, msgs, next_link) => {
+                    app.channel_messages = msgs.clone();
+                    app.channel_messages_next_link = next_link;
+                    app.channel_message_cache.insert(channel_id, msgs);
+                }
             }
         }
 
@@ -357,45 +381,15 @@ async fn run_app(
             }
         }
 
-        // Auto-refresh
+        // Auto-refresh (non-blocking — spawned to background)
         if app.should_refresh() {
-            if let Ok(Some(new_token)) = auth::get_valid_token(&http_client, &config).await {
-                graph.set_token(new_token.access_token.clone());
-            }
-
-            // Refresh current view data
-            match app.view_mode {
-                ViewMode::Chats => {
-                    if let Ok(chats) = graph.list_chats().await {
-                        app.chats = chats;
-                        app.update_total_unread();
-                    }
-                    if let Some(chat_id) = app.selected_chat_id().map(String::from) {
-                        if let Ok((messages, next_link)) = graph.get_messages(&chat_id).await {
-                            app.messages = messages;
-                            app.messages_next_link = next_link;
-                            if app.detect_new_messages() {
-                                // Terminal bell for new messages
-                                print!("\x07");
-                            }
-                        }
-                    }
-                }
-                ViewMode::Teams => {
-                    if let (Some(team_id), Some(channel_id)) = (
-                        app.selected_team_id().map(String::from),
-                        app.selected_channel_id().map(String::from),
-                    ) {
-                        if let Ok((msgs, next_link)) = graph.get_channel_messages(&team_id, &channel_id).await {
-                            app.channel_messages = msgs.clone();
-                            app.channel_messages_next_link = next_link;
-                            app.channel_message_cache.insert(channel_id, msgs);
-                        }
-                    }
-                }
-            }
-
-            // Refresh presence in background
+            spawn_auto_refresh(
+                &http_client,
+                &config,
+                &graph,
+                &app,
+                &bg_tx,
+            );
             spawn_presence_load(&graph, &app, &bg_tx);
             app.mark_refreshed();
         }
@@ -1105,6 +1099,51 @@ async fn refresh_all(graph: &client::GraphClient, app: &mut app::App) {
     app.mark_refreshed();
 }
 
+/// Spawn auto-refresh as a background task (non-blocking)
+fn spawn_auto_refresh(
+    http_client: &reqwest::Client,
+    config: &config::Config,
+    graph: &client::GraphClient,
+    app: &app::App,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+) {
+    let bg_graph = graph.clone_for_background();
+    let tx = bg_tx.clone();
+    let bg_http = http_client.clone();
+    let bg_config = config.clone();
+    let view_mode = app.view_mode;
+    let chat_id = app.selected_chat_id().map(String::from);
+    let team_id = app.selected_team_id().map(String::from);
+    let channel_id = app.selected_channel_id().map(String::from);
+
+    tokio::spawn(async move {
+        // Refresh token if needed
+        if let Ok(Some(new_token)) = auth::get_valid_token(&bg_http, &bg_config).await {
+            let _ = tx.send(BgResult::TokenRefreshed(new_token.access_token.clone()));
+        }
+
+        match view_mode {
+            ViewMode::Chats => {
+                if let Ok(chats) = bg_graph.list_chats().await {
+                    let _ = tx.send(BgResult::RefreshedChats(chats));
+                }
+                if let Some(cid) = chat_id {
+                    if let Ok((messages, next_link)) = bg_graph.get_messages(&cid).await {
+                        let _ = tx.send(BgResult::RefreshedChatMessages(messages, next_link));
+                    }
+                }
+            }
+            ViewMode::Teams => {
+                if let (Some(tid), Some(cid)) = (team_id, channel_id) {
+                    if let Ok((msgs, next_link)) = bg_graph.get_channel_messages(&tid, &cid).await {
+                        let _ = tx.send(BgResult::RefreshedChannelMessages(cid, msgs, next_link));
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// Spawn presence loading as a background task (non-blocking)
 fn spawn_presence_load(
     graph: &client::GraphClient,
@@ -1128,23 +1167,32 @@ fn spawn_presence_load(
     }
 
     tokio::spawn(async move {
-        // Own presence
-        if let Ok(p) = bg_graph.get_my_presence().await {
+        // Own presence + others' presence in parallel
+        let others_graph = bg_graph.clone_for_background();
+        let my_presence_fut = bg_graph.get_my_presence();
+        let others_fut = async {
+            let mut all_presences = Vec::new();
+            for chunk in user_ids.chunks(650) {
+                if let Ok(presences) = others_graph.get_presences(&chunk.to_vec()).await {
+                    all_presences.extend(presences);
+                }
+            }
+            all_presences
+        };
+
+        let (my_result, others_result) = tokio::join!(my_presence_fut, others_fut);
+
+        if let Ok(p) = my_result {
             if let Some(avail) = p.availability {
                 let _ = tx.send(BgResult::MyPresence(avail));
             }
         }
-        // Others' presence (batch, max 650 per call)
-        for chunk in user_ids.chunks(650) {
-            if let Ok(presences) = bg_graph.get_presences(&chunk.to_vec()).await {
-                let map: std::collections::HashMap<String, String> = presences
-                    .into_iter()
-                    .filter_map(|p| p.availability.map(|a| (p.id, a)))
-                    .collect();
-                if !map.is_empty() {
-                    let _ = tx.send(BgResult::PresenceMap(map));
-                }
-            }
+        let map: std::collections::HashMap<String, String> = others_result
+            .into_iter()
+            .filter_map(|p| p.availability.map(|a| (p.id, a)))
+            .collect();
+        if !map.is_empty() {
+            let _ = tx.send(BgResult::PresenceMap(map));
         }
     });
 }
