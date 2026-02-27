@@ -544,6 +544,8 @@ async fn handle_teams_keys(
             KeyCode::Enter => {
                 // Show cached channels immediately, then refresh in background
                 app.show_cached_channels_for_selected_team();
+                app.channel_members.clear();
+                app.show_members = false;
                 load_channels_with_preload(graph, app, bg_tx).await;
                 if !app.channels.is_empty() {
                     app.teams_panel = TeamsPanel::ChannelList;
@@ -570,6 +572,7 @@ async fn handle_teams_keys(
                 app.teams_panel = TeamsPanel::ChannelMessages;
             }
             KeyCode::Esc => app.teams_panel = TeamsPanel::TeamList,
+            KeyCode::Char('m') => load_and_toggle_members(graph, app).await,
             _ => {}
         },
         TeamsPanel::ChannelMessages => match code {
@@ -620,6 +623,7 @@ async fn handle_teams_keys(
                     app.start_channel_edit();
                 }
             }
+            KeyCode::Char('m') => load_and_toggle_members(graph, app).await,
             KeyCode::Enter => app.teams_panel = TeamsPanel::ChannelInput,
             KeyCode::Esc => {
                 if app.selected_channel_message.is_some() {
@@ -1229,6 +1233,25 @@ async fn load_channel_messages_cached(graph: &client::GraphClient, app: &mut app
     }
 }
 
+async fn load_and_toggle_members(graph: &client::GraphClient, app: &mut app::App) {
+    app.toggle_members();
+    if !app.show_members {
+        return;
+    }
+    if let (Some(team_id), Some(channel_id)) = (
+        app.selected_team_id().map(String::from),
+        app.selected_channel_id().map(String::from),
+    ) {
+        match graph.get_channel_members(&team_id, &channel_id).await {
+            Ok(members) => {
+                app.channel_members = members;
+                app.status_message.clear();
+            }
+            Err(e) => app.status_message = format!("Members: {}", e),
+        }
+    }
+}
+
 async fn send_channel_message(graph: &client::GraphClient, app: &mut app::App, content: &str) {
     if let (Some(team_id), Some(channel_id)) = (
         app.selected_team_id().map(String::from),
@@ -1297,6 +1320,7 @@ fn print_help() {
     println!("  Tab / Shift+Tab  Switch panels (Teams → Channels → Messages → Input)");
     println!("  Up/Down or j/k   Navigate teams / channels / scroll messages");
     println!("  Enter            Expand team / select channel / send message");
+    println!("  m                Toggle channel member list");
     println!("  Esc              Go back one panel");
     println!();
     println!("SECURITY:");
