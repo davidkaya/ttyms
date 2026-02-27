@@ -541,13 +541,25 @@ fn draw_input_box(
 // ---- Teams View ----
 
 fn draw_teams_body(frame: &mut Frame, app: &App, area: Rect) {
+    let constraints = if app.show_members {
+        vec![
+            Constraint::Percentage(25),
+            Constraint::Percentage(50),
+            Constraint::Percentage(25),
+        ]
+    } else {
+        vec![Constraint::Percentage(30), Constraint::Percentage(70)]
+    };
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .constraints(constraints)
         .split(area);
 
     draw_teams_sidebar(frame, app, chunks[0]);
     draw_channel_message_area(frame, app, chunks[1]);
+    if app.show_members {
+        draw_channel_members(frame, app, chunks[2]);
+    }
 }
 
 fn draw_teams_sidebar(frame: &mut Frame, app: &App, area: Rect) {
@@ -644,6 +656,37 @@ fn draw_channel_list(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(indicator, style),
                 Span::styled(prefix, Style::default().fg(Color::DarkGray)),
                 Span::styled(&channel.display_name, style),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items).block(block);
+    frame.render_widget(list, area);
+}
+
+fn draw_channel_members(frame: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title(format!(" Members ({}) ", app.channel_members.len()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    if app.channel_members.is_empty() {
+        let empty = Paragraph::new("No members loaded")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block);
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .channel_members
+        .iter()
+        .map(|member| {
+            let role_badge = if member.is_owner() { " 👑" } else { "" };
+            ListItem::new(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(member.name(), Style::default().fg(Color::White)),
+                Span::styled(role_badge, Style::default().fg(Color::Yellow)),
             ]))
         })
         .collect();
@@ -761,6 +804,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 TeamsPanel::ChannelList => {
                     add_shortcut("Enter", "Open Channel", &mut spans);
+                    add_shortcut("m", "Members", &mut spans);
                     add_shortcut("Esc", "Back", &mut spans);
                 }
                 TeamsPanel::ChannelMessages => {
@@ -775,6 +819,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                         add_shortcut("e", "Add Reaction", &mut spans);
                         add_shortcut("r", "Refresh", &mut spans);
                     }
+                    add_shortcut("m", "Members", &mut spans);
                     add_shortcut("Enter", "Write Message", &mut spans);
                     add_shortcut("Esc", "Back", &mut spans);
                 }
