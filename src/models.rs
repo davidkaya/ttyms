@@ -122,6 +122,7 @@ pub struct Channel {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ChannelMember {
     pub id: Option<String>,
     #[serde(rename = "displayName")]
