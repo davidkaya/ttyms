@@ -58,6 +58,7 @@ It uses the Microsoft Graph API for messaging and OAuth2 for authentication.
   - Examples: `feat(auth): add PKCE browser flow`, `fix(ui): truncate status bar text`
 - Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer
 - Keep commits focused on a single logical change
+- **Always create an atomic commit after completing a change** — never leave work uncommitted
 
 ### Roadmap Maintenance
 - **Always update `ROADMAP.md` when completing features** — mark items with ~~strikethrough~~ and ✅
