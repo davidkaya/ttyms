@@ -1299,9 +1299,13 @@ async fn load_and_toggle_members(graph: &client::GraphClient, app: &mut app::App
             }
             Err(e) => {
                 let err_str = e.to_string();
+                app.show_members = false;
                 if err_str.contains("403") {
-                    app.show_members = false;
-                    app.status_message = "Members require admin consent".to_string();
+                    app.show_error(
+                        "Insufficient Permissions",
+                        "Loading channel members requires the ChannelMessage.Read.All permission, which needs admin consent.",
+                        "Ask your IT admin to grant consent for the ttyms application.",
+                    );
                 } else {
                     app.show_error(
                         "Load Members Failed",
