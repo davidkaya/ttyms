@@ -49,7 +49,6 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 ## Prerequisites
 
 - **Microsoft 365 account** with Teams access
-- **Azure AD app registration** (see setup below)
 
 ## Installation
 
@@ -84,7 +83,32 @@ cargo build --release
 
 ## Setup
 
-### 1. Register an Azure AD Application
+ttyms ships with a default Azure AD client ID, so it works out of the box — no app registration required.
+
+Just run it:
+
+```sh
+ttyms
+```
+
+On first run, you'll be prompted to sign in using the device code flow.
+
+### Configuration (optional)
+
+A config file is created on first run at:
+- **Windows**: `%APPDATA%\ttyms\config.toml`
+- **macOS**: `~/Library/Application Support/ttyms/config.toml`
+- **Linux**: `~/.config/ttyms/config.toml`
+
+You can override the default client ID with your own Azure AD app registration:
+
+```toml
+client_id = "your-application-client-id-here"
+tenant_id = "common"
+```
+
+<details>
+<summary><strong>Registering your own Azure AD Application</strong></summary>
 
 1. Go to [Azure Portal](https://portal.azure.com) → **Microsoft Entra ID** → **App registrations**
 2. Click **New registration**
@@ -109,35 +133,9 @@ cargo build --release
    - `Channel.ReadBasic.All`
    - `ChannelMessage.Read.All`
    - `ChannelMessage.Send`
-7. Copy the **Application (client) ID**
+7. Copy the **Application (client) ID** and set it in your `config.toml`
 
-### 2. Configure ttyms
-
-Run the app once to generate the config file:
-
-```sh
-cargo run
-```
-
-Edit the config file (location shown in the output):
-- **Windows**: `%APPDATA%\ttyms\config.toml`
-- **macOS**: `~/Library/Application Support/ttyms/config.toml`
-- **Linux**: `~/.config/ttyms/config.toml`
-
-Set your `client_id`:
-
-```toml
-client_id = "your-application-client-id-here"
-tenant_id = "common"
-```
-
-### 3. Run
-
-```sh
-cargo run
-```
-
-On first run, you'll be prompted to sign in using the device code flow.
+</details>
 
 ### Authentication Options
 
