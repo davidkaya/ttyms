@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Delta-based message sync** — uses Microsoft Graph delta queries (`/messages/delta`) for incremental message updates instead of full re-fetching, reducing API calls and latency
+
 ## [0.1.4] - 2026-02-27
 
 ### Added

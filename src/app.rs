@@ -137,6 +137,9 @@ pub struct App {
     pub channel_messages_next_link: Option<String>,
     pub loading_more_messages: bool,
 
+    // Delta query tokens for incremental message sync
+    pub chat_delta_links: HashMap<String, String>,
+
     // Settings dialog
     pub selected_setting: usize,
     pub editing_setting: bool,
@@ -197,6 +200,7 @@ impl App {
             messages_next_link: None,
             channel_messages_next_link: None,
             loading_more_messages: false,
+            chat_delta_links: HashMap::new(),
             selected_setting: 0,
             editing_setting: false,
             setting_input: String::new(),
@@ -687,6 +691,31 @@ impl App {
 
         let has_new = new_ids.iter().any(|id| !self.known_message_ids.contains(id));
         self.known_message_ids = new_ids;
+        has_new
+    }
+
+    /// Merge delta messages into the existing message list.
+    /// New messages are added, existing messages are updated in place.
+    /// Returns true if any new messages were added (for notification bell).
+    pub fn merge_delta_messages(&mut self, delta: Vec<Message>) -> bool {
+        if delta.is_empty() {
+            return false;
+        }
+        let mut has_new = false;
+        for msg in delta {
+            if let Some(existing) = self.messages.iter_mut().find(|m| m.id == msg.id) {
+                *existing = msg;
+            } else {
+                has_new = true;
+                self.messages.push(msg);
+            }
+        }
+        // Re-sort by creation time (oldest first)
+        self.messages.sort_by(|a, b| {
+            a.created_date_time.cmp(&b.created_date_time)
+        });
+        // Update known IDs
+        self.known_message_ids = self.messages.iter().map(|m| m.id.clone()).collect();
         has_new
     }
 

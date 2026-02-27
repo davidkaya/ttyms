@@ -742,3 +742,59 @@ mod channel_member_tests {
         assert!(m.roles.is_empty());
     }
 }
+
+#[cfg(test)]
+mod delta_response_deserialization {
+    use ttyms::models::{DeltaResponse, Message};
+
+    #[test]
+    fn deserialize_delta_with_delta_link() {
+        let json = r#"{
+            "value": [
+                {
+                    "id": "msg-1",
+                    "messageType": "message",
+                    "createdDateTime": "2026-01-01T10:00:00Z"
+                }
+            ],
+            "@odata.deltaLink": "https://graph.microsoft.com/v1.0/chats/c1/messages/delta?$deltatoken=abc123"
+        }"#;
+        let resp: DeltaResponse<Message> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.value.len(), 1);
+        assert_eq!(resp.value[0].id, "msg-1");
+        assert!(resp.next_link.is_none());
+        assert_eq!(
+            resp.delta_link.unwrap(),
+            "https://graph.microsoft.com/v1.0/chats/c1/messages/delta?$deltatoken=abc123"
+        );
+    }
+
+    #[test]
+    fn deserialize_delta_with_next_link() {
+        let json = r#"{
+            "value": [
+                {"id": "msg-1", "messageType": "message"},
+                {"id": "msg-2", "messageType": "message"}
+            ],
+            "@odata.nextLink": "https://graph.microsoft.com/v1.0/chats/c1/messages/delta?$skiptoken=xyz"
+        }"#;
+        let resp: DeltaResponse<Message> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.value.len(), 2);
+        assert!(resp.delta_link.is_none());
+        assert_eq!(
+            resp.next_link.unwrap(),
+            "https://graph.microsoft.com/v1.0/chats/c1/messages/delta?$skiptoken=xyz"
+        );
+    }
+
+    #[test]
+    fn deserialize_empty_delta_response() {
+        let json = r#"{
+            "value": [],
+            "@odata.deltaLink": "https://graph.microsoft.com/v1.0/chats/c1/messages/delta?$deltatoken=empty"
+        }"#;
+        let resp: DeltaResponse<Message> = serde_json::from_str(json).unwrap();
+        assert!(resp.value.is_empty());
+        assert!(resp.delta_link.is_some());
+    }
+}

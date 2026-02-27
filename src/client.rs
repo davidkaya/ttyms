@@ -154,6 +154,34 @@ impl GraphClient {
         Ok((messages, resp.next_link))
     }
 
+    /// Fetch only new/changed messages since the last delta token.
+    /// On first call pass None for delta_link to get initial state + token.
+    pub async fn get_messages_delta(
+        &self,
+        chat_id: &str,
+        delta_link: Option<&str>,
+    ) -> Result<(Vec<Message>, Option<String>)> {
+        let url = match delta_link {
+            Some(link) => link.to_string(),
+            None => format!(
+                "https://graph.microsoft.com/v1.0/me/chats/{}/messages/delta",
+                chat_id
+            ),
+        };
+        // Follow all pages to collect complete delta
+        let mut all_messages = Vec::new();
+        let mut current_url = url;
+        loop {
+            let resp: DeltaResponse<Message> = self.get(&current_url).await?;
+            all_messages.extend(resp.value);
+            if let Some(next) = resp.next_link {
+                current_url = next;
+            } else {
+                return Ok((all_messages, resp.delta_link));
+            }
+        }
+    }
+
     pub async fn get_messages_page(&self, next_link: &str) -> Result<(Vec<Message>, Option<String>)> {
         let resp: PagedResponse<Message> = self.get(next_link).await?;
         let mut messages = resp.value;

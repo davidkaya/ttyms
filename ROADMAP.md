@@ -30,6 +30,7 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Homebrew distribution** — `brew install davidkaya/tap/ttyms` with pre-built macOS binaries
 - **Channel member list** — toggle member sidebar with `m` key, owners marked with 👑
 - **Settings dialog** — configurable refresh interval via in-app settings
+- **Delta-based message sync** — incremental message updates via Graph delta queries
 
 ---
 
@@ -94,11 +95,12 @@ Render inline images in the terminal using unicode block characters or sixel pro
 
 ## 🟣 Phase 5 — Real-time & Advanced
 
-### WebSocket/SignalR real-time messages
-Replace polling with real-time message delivery using Graph change notifications.
-- `POST /subscriptions` — subscribe to `/me/chats/getAllMessages`
-- Requires a notification URL or uses websocket transport (beta)
-- Dramatically reduces latency and API calls
+### ~~WebSocket/SignalR real-time messages~~ → Delta-based sync ✅
+~~Replace polling with real-time message delivery using Graph change notifications.~~
+- True WebSocket/SignalR notifications require a public webhook URL (not feasible for terminal clients)
+- Implemented **delta queries** (`/chats/{id}/messages/delta`) for incremental message sync
+- Only new/changed messages are fetched on each poll cycle, dramatically reducing API calls
+- Delta tokens stored per-chat for efficient incremental updates
 
 ### Search messages
 Full-text search across all chats and channels.

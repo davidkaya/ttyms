@@ -1321,3 +1321,109 @@ mod channel_members_state {
         assert!(app.channel_messages.is_empty());
     }
 }
+
+#[cfg(test)]
+mod delta_sync_tests {
+    use ttyms::app::App;
+    use ttyms::models::*;
+
+    fn make_message_with_time(id: &str, time: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            message_type: Some("message".to_string()),
+            body: Some(MessageBody {
+                content: Some(format!("Msg {}", id)),
+                content_type: None,
+            }),
+            from: None,
+            created_date_time: Some(time.to_string()),
+            reactions: None,
+        }
+    }
+
+    #[test]
+    fn delta_links_initially_empty() {
+        let app = App::new();
+        assert!(app.chat_delta_links.is_empty());
+    }
+
+    #[test]
+    fn merge_empty_delta_returns_false() {
+        let mut app = App::new();
+        app.messages = vec![make_message_with_time("m1", "2026-01-01T10:00:00Z")];
+        assert!(!app.merge_delta_messages(Vec::new()));
+    }
+
+    #[test]
+    fn merge_new_messages_returns_true() {
+        let mut app = App::new();
+        app.messages = vec![make_message_with_time("m1", "2026-01-01T10:00:00Z")];
+        app.known_message_ids.insert("m1".to_string());
+
+        let delta = vec![make_message_with_time("m2", "2026-01-01T10:01:00Z")];
+        assert!(app.merge_delta_messages(delta));
+        assert_eq!(app.messages.len(), 2);
+    }
+
+    #[test]
+    fn merge_updates_existing_message() {
+        let mut app = App::new();
+        app.messages = vec![make_message_with_time("m1", "2026-01-01T10:00:00Z")];
+        app.known_message_ids.insert("m1".to_string());
+
+        let mut updated = make_message_with_time("m1", "2026-01-01T10:00:00Z");
+        updated.body = Some(MessageBody {
+            content: Some("Updated content".to_string()),
+            content_type: None,
+        });
+        let has_new = app.merge_delta_messages(vec![updated]);
+        assert!(!has_new); // update, not new
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].content_text(), "Updated content");
+    }
+
+    #[test]
+    fn merge_sorts_by_creation_time() {
+        let mut app = App::new();
+        app.messages = vec![
+            make_message_with_time("m1", "2026-01-01T10:00:00Z"),
+            make_message_with_time("m3", "2026-01-01T10:02:00Z"),
+        ];
+        app.known_message_ids.insert("m1".to_string());
+        app.known_message_ids.insert("m3".to_string());
+
+        let delta = vec![make_message_with_time("m2", "2026-01-01T10:01:00Z")];
+        app.merge_delta_messages(delta);
+
+        assert_eq!(app.messages.len(), 3);
+        assert_eq!(app.messages[0].id, "m1");
+        assert_eq!(app.messages[1].id, "m2");
+        assert_eq!(app.messages[2].id, "m3");
+    }
+
+    #[test]
+    fn merge_updates_known_message_ids() {
+        let mut app = App::new();
+        app.messages = vec![make_message_with_time("m1", "2026-01-01T10:00:00Z")];
+        app.known_message_ids.insert("m1".to_string());
+
+        let delta = vec![make_message_with_time("m2", "2026-01-01T10:01:00Z")];
+        app.merge_delta_messages(delta);
+
+        assert!(app.known_message_ids.contains("m1"));
+        assert!(app.known_message_ids.contains("m2"));
+    }
+
+    #[test]
+    fn delta_link_can_be_stored_and_retrieved() {
+        let mut app = App::new();
+        app.chat_delta_links.insert(
+            "chat-1".to_string(),
+            "https://graph.microsoft.com/delta?token=abc".to_string(),
+        );
+        assert_eq!(
+            app.chat_delta_links.get("chat-1").unwrap(),
+            "https://graph.microsoft.com/delta?token=abc"
+        );
+    }
+}

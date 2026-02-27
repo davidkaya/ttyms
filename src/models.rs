@@ -14,6 +14,15 @@ pub struct PagedResponse<T> {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct DeltaResponse<T> {
+    pub value: Vec<T>,
+    #[serde(rename = "@odata.nextLink")]
+    pub next_link: Option<String>,
+    #[serde(rename = "@odata.deltaLink")]
+    pub delta_link: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct User {
     pub id: String,
     #[serde(rename = "displayName")]

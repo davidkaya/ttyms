@@ -87,6 +87,8 @@ enum BgResult {
     RefreshedChatMessages(Vec<models::Message>, Option<String>),
     RefreshedChannelMessages(String, Vec<models::Message>, Option<String>),
     TokenRefreshed(String),
+    // Delta query results (incremental sync)
+    DeltaChatMessages(String, Vec<models::Message>, Option<String>),
 }
 
 #[tokio::main]
@@ -291,6 +293,16 @@ async fn run_app(
                     app.channel_messages = msgs.clone();
                     app.channel_messages_next_link = next_link;
                     app.channel_message_cache.insert(channel_id, msgs);
+                }
+                BgResult::DeltaChatMessages(chat_id, delta_msgs, delta_link) => {
+                    if app.selected_chat_id() == Some(chat_id.as_str()) {
+                        if let Some(link) = delta_link {
+                            app.chat_delta_links.insert(chat_id, link);
+                        }
+                        if app.merge_delta_messages(delta_msgs) {
+                            print!("\x07");
+                        }
+                    }
                 }
             }
         }
@@ -958,6 +970,8 @@ async fn load_messages(graph: &client::GraphClient, app: &mut app::App) {
     app.cancel_reply();
     app.cancel_edit();
     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        // Clear delta token so next auto-refresh seeds a fresh one
+        app.chat_delta_links.remove(&chat_id);
         match graph.get_messages(&chat_id).await {
             Ok((messages, next_link)) => {
                 app.messages = messages;
@@ -1214,6 +1228,10 @@ fn spawn_auto_refresh(
     let chat_id = app.selected_chat_id().map(String::from);
     let team_id = app.selected_team_id().map(String::from);
     let channel_id = app.selected_channel_id().map(String::from);
+    let delta_link = chat_id
+        .as_deref()
+        .and_then(|cid| app.chat_delta_links.get(cid))
+        .cloned();
 
     tokio::spawn(async move {
         // Refresh token if needed
@@ -1227,8 +1245,31 @@ fn spawn_auto_refresh(
                     let _ = tx.send(BgResult::RefreshedChats(chats));
                 }
                 if let Some(cid) = chat_id {
-                    if let Ok((messages, next_link)) = bg_graph.get_messages(&cid).await {
-                        let _ = tx.send(BgResult::RefreshedChatMessages(messages, next_link));
+                    if delta_link.is_some() {
+                        // Use delta query for incremental sync
+                        if let Ok((msgs, new_delta)) =
+                            bg_graph.get_messages_delta(&cid, delta_link.as_deref()).await
+                        {
+                            let _ = tx.send(BgResult::DeltaChatMessages(cid, msgs, new_delta));
+                        }
+                    } else {
+                        // First load or no delta token: do initial delta query to get token
+                        if let Ok((msgs, new_delta)) =
+                            bg_graph.get_messages_delta(&cid, None).await
+                        {
+                            let _ = tx.send(BgResult::RefreshedChatMessages(
+                                msgs,
+                                None,
+                            ));
+                            // Send delta link via a separate message
+                            if let Some(link) = new_delta {
+                                let _ = tx.send(BgResult::DeltaChatMessages(
+                                    cid,
+                                    Vec::new(),
+                                    Some(link),
+                                ));
+                            }
+                        }
                     }
                 }
             }
