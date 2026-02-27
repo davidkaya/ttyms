@@ -635,3 +635,38 @@ mod team_channel_deserialization {
         assert_eq!(resp.value.len(), 2);
     }
 }
+
+#[cfg(test)]
+mod paged_response_tests {
+    use ttyms::models::*;
+
+    #[test]
+    fn deserialize_paged_response_with_next_link() {
+        let json = r#"{
+            "value": [{"id":"msg1","messageType":"message"}],
+            "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/chats/abc/messages?$skiptoken=xyz"
+        }"#;
+        let resp: PagedResponse<Message> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.value.len(), 1);
+        assert_eq!(
+            resp.next_link.as_deref(),
+            Some("https://graph.microsoft.com/v1.0/me/chats/abc/messages?$skiptoken=xyz")
+        );
+    }
+
+    #[test]
+    fn deserialize_paged_response_without_next_link() {
+        let json = r#"{"value": [{"id":"msg1","messageType":"message"}]}"#;
+        let resp: PagedResponse<Message> = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.value.len(), 1);
+        assert!(resp.next_link.is_none());
+    }
+
+    #[test]
+    fn deserialize_paged_response_empty() {
+        let json = r#"{"value": []}"#;
+        let resp: PagedResponse<Message> = serde_json::from_str(json).unwrap();
+        assert!(resp.value.is_empty());
+        assert!(resp.next_link.is_none());
+    }
+}
