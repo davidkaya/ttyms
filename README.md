@@ -8,6 +8,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 
 - **1:1 and group chat messaging** — browse all your Teams chats, read messages, and reply
 - **Teams & Channels** — browse joined teams, navigate channels, read and post channel messages
+- **Channel member list** — toggle member sidebar with `m` to see who's in the channel (owners marked with 👑)
 - **Reply to messages** — quote-reply to any message with `r` key
 - **Edit & delete messages** — edit your own messages with `w`, delete with `d`
 - **Message pagination** — scroll up to load older messages automatically
@@ -189,6 +190,7 @@ cargo run -- --pkce
 | `e` | React to selected message |
 | `w` | Edit selected message (own messages only) |
 | `d` | Delete selected message (own messages only) |
+| `m` | Toggle channel member list |
 | `Esc` | Go back one panel / deselect / cancel reply or edit |
 
 ### Reaction Picker

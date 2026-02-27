@@ -28,6 +28,7 @@ Feature roadmap for the terminal Microsoft Teams client. All features below are 
 - **Edit / delete messages** — edit own messages with `w`, soft-delete with `d`
 - **Message pagination** — scroll up to load older messages via `@odata.nextLink`
 - **Homebrew distribution** — `brew install davidkaya/tap/ttyms` with pre-built macOS binaries
+- **Channel member list** — toggle member sidebar with `m` key, owners marked with 👑
 
 ---
 
@@ -67,10 +68,7 @@ Show "User is typing…" and broadcast your own typing state.
 ### ~~List joined teams~~ ✅
 ### ~~Channel browsing~~ ✅
 ### ~~Channel messages~~ ✅ (read and send)
-
-### Channel member list
-View members of a channel.
-- `GET /teams/{id}/channels/{id}/members`
+### ~~Channel member list~~ ✅
 
 ---
 
