@@ -2,12 +2,15 @@
 
 A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust with [ratatui](https://ratatui.rs/).
 
-![Rust](https://img.shields.io/badge/Rust-1.83+-orange) ![License](https://img.shields.io/badge/license-MIT-blue)
+![Rust](https://img.shields.io/badge/Rust-1.75+-orange) ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Features
 
 - **1:1 and group chat messaging** — browse all your Teams chats, read messages, and reply
 - **Teams & Channels** — browse joined teams, navigate channels, read and post channel messages
+- **Reply to messages** — quote-reply to any message with `r` key
+- **Edit & delete messages** — edit your own messages with `w`, delete with `d`
+- **Message pagination** — scroll up to load older messages automatically
 - **Reactions** — view message reactions (👍❤️😂😮😢😡) and react with keyboard shortcut
 - **Presence** — see online status of contacts, set your own presence (Available, Busy, DND, Away)
 - **Unread indicators** — unread message counts per chat, total unread badge in header
@@ -181,8 +184,12 @@ cargo run -- --pkce
 | `Tab` / `Shift+Tab` | Switch panels (Teams → Channels → Messages → Input) |
 | `↑`/`↓` or `j`/`k` | Navigate teams / channels / scroll messages |
 | `Enter` | Expand team / select channel / send message |
-| `Esc` | Go back one panel |
-| `r` | Refresh current view |
+| `s` | Toggle message selection (in Channel Messages panel) |
+| `r` | Reply to selected message / Refresh (when no selection) |
+| `e` | React to selected message |
+| `w` | Edit selected message (own messages only) |
+| `d` | Delete selected message (own messages only) |
+| `Esc` | Go back one panel / deselect / cancel reply or edit |
 
 ### Reaction Picker
 
@@ -201,9 +208,10 @@ Press `p` to set your status:
 ### CLI Options
 
 ```sh
-ttyms --help     # Show help
-ttyms --pkce     # Use PKCE browser flow instead of device code
-ttyms --logout   # Clear stored credentials securely
+ttyms --help              # Show help
+ttyms --pkce              # Use PKCE browser flow instead of device code
+ttyms --logout            # Clear stored credentials securely
+ttyms --client-id <ID>    # Override client_id from config
 ```
 
 ## Security
