@@ -9,6 +9,12 @@ pub const DEFAULT_CLIENT_ID: &str = "ac138a64-055b-4915-b670-31200c6235e6";
 pub struct Config {
     pub client_id: String,
     pub tenant_id: String,
+    #[serde(default = "default_refresh_interval")]
+    pub refresh_interval_secs: u64,
+}
+
+fn default_refresh_interval() -> u64 {
+    15
 }
 
 pub fn config_dir() -> Result<PathBuf> {
@@ -33,6 +39,9 @@ client_id = ""
 
 # Azure AD Tenant ID ("common" for multi-tenant, or your specific tenant ID)
 tenant_id = "common"
+
+# Auto-refresh interval in seconds (minimum: 5)
+refresh_interval_secs = 15
 "#,
             DEFAULT_CLIENT_ID
         );
@@ -44,6 +53,13 @@ tenant_id = "common"
         config.client_id = DEFAULT_CLIENT_ID.to_string();
     }
     Ok(config)
+}
+
+pub fn save_config(config: &Config) -> Result<()> {
+    let path = config_dir()?.join("config.toml");
+    let content = toml::to_string_pretty(config).context("Failed to serialize config")?;
+    std::fs::write(&path, content).context("Failed to write config file")?;
+    Ok(())
 }
 
 pub fn print_setup_guide() {

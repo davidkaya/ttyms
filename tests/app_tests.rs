@@ -748,6 +748,23 @@ mod dialog_tests {
         app.close_dialog();
         assert_eq!(app.dialog, DialogMode::None);
     }
+
+    #[test]
+    fn open_settings_dialog() {
+        let mut app = App::new();
+        app.open_settings();
+        assert_eq!(app.dialog, DialogMode::Settings);
+        assert_eq!(app.selected_setting, 0);
+        assert!(!app.editing_setting);
+    }
+
+    #[test]
+    fn close_settings_dialog() {
+        let mut app = App::new();
+        app.open_settings();
+        app.close_dialog();
+        assert_eq!(app.dialog, DialogMode::None);
+    }
 }
 
 #[cfg(test)]

@@ -44,6 +44,7 @@ pub enum DialogMode {
     NewChat,
     ReactionPicker,
     PresencePicker,
+    Settings,
     Error(ErrorInfo),
 }
 
@@ -135,6 +136,12 @@ pub struct App {
     pub messages_next_link: Option<String>,
     pub channel_messages_next_link: Option<String>,
     pub loading_more_messages: bool,
+
+    // Settings dialog
+    pub selected_setting: usize,
+    pub editing_setting: bool,
+    pub setting_input: String,
+    pub setting_input_cursor: usize,
 }
 
 impl App {
@@ -190,6 +197,10 @@ impl App {
             messages_next_link: None,
             channel_messages_next_link: None,
             loading_more_messages: false,
+            selected_setting: 0,
+            editing_setting: false,
+            setting_input: String::new(),
+            setting_input_cursor: 0,
         }
     }
 
@@ -515,6 +526,16 @@ impl App {
     pub fn open_presence_picker(&mut self) {
         self.dialog = DialogMode::PresencePicker;
         self.selected_presence = 0;
+    }
+
+    // ---- Settings ----
+
+    pub fn open_settings(&mut self) {
+        self.dialog = DialogMode::Settings;
+        self.selected_setting = 0;
+        self.editing_setting = false;
+        self.setting_input.clear();
+        self.setting_input_cursor = 0;
     }
 
     // ---- Teams navigation ----

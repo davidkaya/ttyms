@@ -183,11 +183,12 @@ async fn authenticate(
 
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    config: config::Config,
+    mut config: config::Config,
     http_client: reqwest::Client,
     token: auth::TokenResponse,
 ) -> Result<()> {
     let mut app = app::App::new();
+    app.refresh_interval = std::time::Duration::from_secs(config.refresh_interval_secs.max(5));
     let mut graph = client::GraphClient::new(token.access_token.clone());
 
     // Background task channel for non-blocking data loading
@@ -323,6 +324,10 @@ async fn run_app(
                         handle_presence_picker_keys(&mut app, &graph, key.code).await;
                         continue;
                     }
+                    DialogMode::Settings => {
+                        handle_settings_keys(&mut app, &mut config, key.code);
+                        continue;
+                    }
                     DialogMode::Error(info) => {
                         match key.code {
                             KeyCode::Char('c') | KeyCode::Char('C') => {
@@ -367,6 +372,12 @@ async fn run_app(
                         && app.teams_panel != TeamsPanel::ChannelInput =>
                     {
                         app.open_presence_picker();
+                        continue;
+                    }
+                    KeyCode::Char('o') if app.active_panel != Panel::Input
+                        && app.teams_panel != TeamsPanel::ChannelInput =>
+                    {
+                        app.open_settings();
                         continue;
                     }
                     _ => {}
@@ -848,6 +859,94 @@ async fn handle_presence_picker_keys(
             }
         }
         _ => {}
+    }
+}
+
+const SETTINGS_COUNT: usize = 1;
+
+fn settings_value(index: usize, config: &config::Config) -> String {
+    match index {
+        0 => config.refresh_interval_secs.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn handle_settings_keys(
+    app: &mut app::App,
+    config: &mut config::Config,
+    code: KeyCode,
+) {
+    if app.editing_setting {
+        match code {
+            KeyCode::Esc => {
+                app.editing_setting = false;
+                app.setting_input.clear();
+                app.setting_input_cursor = 0;
+            }
+            KeyCode::Enter => {
+                apply_setting(app, config, app.selected_setting, &app.setting_input.clone());
+                app.editing_setting = false;
+                app.setting_input.clear();
+                app.setting_input_cursor = 0;
+            }
+            KeyCode::Char(c) => {
+                app.setting_input.insert(app.setting_input_cursor, c);
+                app.setting_input_cursor += 1;
+            }
+            KeyCode::Backspace => {
+                if app.setting_input_cursor > 0 {
+                    app.setting_input_cursor -= 1;
+                    app.setting_input.remove(app.setting_input_cursor);
+                }
+            }
+            KeyCode::Left => {
+                app.setting_input_cursor = app.setting_input_cursor.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                app.setting_input_cursor = app.setting_input_cursor.min(app.setting_input.len());
+                if app.setting_input_cursor < app.setting_input.len() {
+                    app.setting_input_cursor += 1;
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    match code {
+        KeyCode::Esc => app.close_dialog(),
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.selected_setting = app.selected_setting.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.selected_setting = (app.selected_setting + 1).min(SETTINGS_COUNT - 1);
+        }
+        KeyCode::Enter => {
+            app.editing_setting = true;
+            app.setting_input = settings_value(app.selected_setting, config);
+            app.setting_input_cursor = app.setting_input.len();
+        }
+        _ => {}
+    }
+}
+
+fn apply_setting(app: &mut app::App, config: &mut config::Config, index: usize, value: &str) {
+    match index {
+        0 => {
+            if let Ok(secs) = value.parse::<u64>() {
+                let secs = secs.max(5);
+                config.refresh_interval_secs = secs;
+                app.refresh_interval = std::time::Duration::from_secs(secs);
+                app.status_message = format!("Refresh interval set to {}s", secs);
+            } else {
+                app.status_message = "Invalid number".to_string();
+                return;
+            }
+        }
+        _ => return,
+    }
+    if let Err(e) = config::save_config(config) {
+        app.status_message = format!("Failed to save config: {}", e);
     }
 }
 

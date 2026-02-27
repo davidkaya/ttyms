@@ -113,6 +113,7 @@ fn draw_main(frame: &mut Frame, app: &App) {
         DialogMode::NewChat => draw_new_chat_dialog(frame, app),
         DialogMode::ReactionPicker => draw_reaction_picker(frame, app),
         DialogMode::PresencePicker => draw_presence_picker(frame, app),
+        DialogMode::Settings => draw_settings_dialog(frame, app),
         DialogMode::Error(info) => draw_error_dialog(frame, info),
         DialogMode::None => {}
     }
@@ -832,6 +833,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Panel::Input => {}
             }
             add_shortcut("p", "Set Status", &mut spans);
+            add_shortcut("o", "Settings", &mut spans);
             add_shortcut("q", "Quit", &mut spans);
         }
         ViewMode::Teams => {
@@ -868,6 +870,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
             }
             add_shortcut("p", "Set Status", &mut spans);
+            add_shortcut("o", "Settings", &mut spans);
             add_shortcut("q", "Quit", &mut spans);
         }
     }
@@ -1055,6 +1058,71 @@ fn draw_presence_picker(frame: &mut Frame, app: &App) {
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "↑↓: select  │  Enter: set  │  Esc: cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+}
+
+fn draw_settings_dialog(frame: &mut Frame, app: &App) {
+    let area = frame.size();
+    let popup = centered_rect(50, 10, area);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" ⚙ Settings ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let refresh_secs = app.refresh_interval.as_secs();
+    let items: Vec<(&str, String)> = vec![
+        ("Refresh interval (seconds)", refresh_secs.to_string()),
+    ];
+
+    let mut lines = Vec::new();
+    for (i, (label, value)) in items.iter().enumerate() {
+        let is_selected = i == app.selected_setting;
+        let indicator = if is_selected { "▸ " } else { "  " };
+
+        if is_selected && app.editing_setting {
+            let label_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+            lines.push(Line::from(vec![
+                Span::styled(indicator, label_style),
+                Span::styled(format!("{}: ", label), label_style),
+            ]));
+            let input_display = format!("  > {}█", app.setting_input);
+            lines.push(Line::from(Span::styled(
+                input_display,
+                Style::default().fg(Color::White),
+            )));
+        } else {
+            let style = if is_selected {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(indicator, style),
+                Span::styled(format!("{}: ", label), style),
+                Span::styled(
+                    value.clone(),
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    let hint = if app.editing_setting {
+        "Enter: save  │  Esc: cancel"
+    } else {
+        "↑↓: select  │  Enter: edit  │  Esc: close"
+    };
+    lines.push(Line::from(Span::styled(
+        hint,
         Style::default().fg(Color::DarkGray),
     )));
 
