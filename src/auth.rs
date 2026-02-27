@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use rand::RngCore;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -163,12 +163,12 @@ pub fn clear_stored_tokens() -> Result<()> {
     // Clear keyring entries
     for key in ["at", "rt", "meta"] {
         if let Some(entry) = keyring_entry(key) {
-            let _ = entry.delete_password();
+            let _ = entry.delete_credential();
         }
     }
     // Clear legacy single entry
     if let Some(entry) = keyring_entry(KEYRING_USER) {
-        let _ = entry.delete_password();
+        let _ = entry.delete_credential();
     }
     // Clear file fallback
     if let Ok(path) = token_file_path() {
@@ -344,7 +344,7 @@ pub async fn authenticate_browser(
 
 pub fn generate_code_verifier() -> String {
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

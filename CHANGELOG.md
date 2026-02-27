@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated all dependencies to latest versions: ratatui 0.30, crossterm 0.29, reqwest 0.13, keyring 3, rand 0.10, dirs 6, base64 0.22, toml 1.0
+- Migrated reqwest TLS feature from `rustls-tls` to `rustls` (renamed in 0.13)
+- Migrated deprecated ratatui APIs (`frame.size()` → `frame.area()`, `frame.set_cursor()` → `frame.set_cursor_position()`)
+
 ## [0.1.3] - 2026-02-27
 
 ### Added

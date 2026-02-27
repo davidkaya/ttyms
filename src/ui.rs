@@ -18,7 +18,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 }
 
 fn draw_loading(frame: &mut Frame, message: &str) {
-    let area = frame.size();
+    let area = frame.area();
     let block = Block::default()
         .title(" ttyms ")
         .borders(Borders::ALL)
@@ -58,7 +58,7 @@ fn draw_loading(frame: &mut Frame, message: &str) {
 }
 
 fn draw_error(frame: &mut Frame, message: &str) {
-    let area = frame.size();
+    let area = frame.area();
     let block = Block::default()
         .title(" ttyms - Error ")
         .borders(Borders::ALL)
@@ -89,7 +89,7 @@ fn draw_error(frame: &mut Frame, message: &str) {
 }
 
 fn draw_main(frame: &mut Frame, app: &App) {
-    let area = frame.size();
+    let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -535,7 +535,7 @@ fn draw_input_box(
 
     if is_active {
         let cursor_pos = input[..cursor.min(input.len())].chars().count() as u16;
-        frame.set_cursor(area.x + 1 + cursor_pos, area.y + 1);
+        frame.set_cursor_position((area.x + 1 + cursor_pos, area.y + 1));
     }
 }
 
@@ -893,7 +893,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 // ---- Dialogs ----
 
 fn draw_new_chat_dialog(frame: &mut Frame, app: &App) {
-    let area = frame.size();
+    let area = frame.area();
     let has_suggestions = !app.suggestions.is_empty();
     let dialog_height = if has_suggestions {
         7 + app.suggestions.len().min(8) as u16
@@ -967,11 +967,11 @@ fn draw_new_chat_dialog(frame: &mut Frame, app: &App) {
     frame.render_widget(content, inner);
 
     let cursor_pos = app.new_chat_input[..app.new_chat_cursor].chars().count() as u16;
-    frame.set_cursor(inner.x + 2 + cursor_pos, inner.y + 1);
+    frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y + 1));
 }
 
 fn draw_reaction_picker(frame: &mut Frame, app: &App) {
-    let area = frame.size();
+    let area = frame.area();
     let popup = centered_rect(40, 5, area);
     frame.render_widget(Clear, popup);
 
@@ -1020,7 +1020,7 @@ fn draw_reaction_picker(frame: &mut Frame, app: &App) {
 }
 
 fn draw_presence_picker(frame: &mut Frame, app: &App) {
-    let area = frame.size();
+    let area = frame.area();
     let height = models::PRESENCE_STATUSES.len() as u16 + 5;
     let popup = centered_rect(40, height, area);
     frame.render_widget(Clear, popup);
@@ -1066,7 +1066,7 @@ fn draw_presence_picker(frame: &mut Frame, app: &App) {
 }
 
 fn draw_settings_dialog(frame: &mut Frame, app: &App) {
-    let area = frame.size();
+    let area = frame.area();
     let popup = centered_rect(50, 10, area);
     frame.render_widget(Clear, popup);
 
@@ -1131,7 +1131,7 @@ fn draw_settings_dialog(frame: &mut Frame, app: &App) {
 }
 
 fn draw_error_dialog(frame: &mut Frame, info: &crate::app::ErrorInfo) {
-    let area = frame.size();
+    let area = frame.area();
 
     // Calculate height based on content
     let detail_lines: Vec<&str> = info.details.lines().collect();
