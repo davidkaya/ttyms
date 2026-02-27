@@ -355,6 +355,19 @@ impl GraphClient {
         Ok(resp.value)
     }
 
+    pub async fn get_channel_members(
+        &self,
+        team_id: &str,
+        channel_id: &str,
+    ) -> Result<Vec<ChannelMember>> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/teams/{}/channels/{}/members",
+            team_id, channel_id
+        );
+        let resp: GraphResponse<ChannelMember> = self.get(&url).await?;
+        Ok(resp.value)
+    }
+
     pub async fn get_channel_messages(
         &self,
         team_id: &str,
