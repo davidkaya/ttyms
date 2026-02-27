@@ -44,9 +44,39 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 
 ## Prerequisites
 
-- **Rust 1.83+** — install via [rustup](https://rustup.rs/)
 - **Microsoft 365 account** with Teams access
 - **Azure AD app registration** (see setup below)
+
+## Installation
+
+### Homebrew (macOS / Linux)
+
+```sh
+brew install davidkaya/tap/ttyms
+```
+
+### Cargo (all platforms)
+
+```sh
+cargo install ttyms
+```
+
+### Arch Linux (AUR)
+
+```sh
+# Using an AUR helper (e.g., yay, paru)
+yay -S ttyms      # stable release from crates.io
+yay -S ttyms-git  # latest from git
+```
+
+### From source
+
+```sh
+git clone https://github.com/davidkaya/ttyms.git
+cd ttyms
+cargo build --release
+# Binary at target/release/ttyms
+```
 
 ## Setup
 
@@ -135,10 +165,12 @@ cargo run -- --pkce
 | `Enter` | Send message / jump to input |
 | `n` | New chat |
 | `s` | Toggle message selection (in Messages panel) |
+| `r` | Reply to selected message / Refresh (when no selection) |
 | `e` | React to selected message |
+| `w` | Edit selected message (own messages only) |
+| `d` | Delete selected message (own messages only) |
 | `p` | Set your presence status |
-| `r` | Refresh chats and messages |
-| `Esc` | Back to chat list / deselect message |
+| `Esc` | Back / deselect / cancel reply or edit |
 | `q` | Quit |
 | `Ctrl+C` | Force quit |
 
