@@ -1233,3 +1233,60 @@ mod pagination_tests {
         assert!(!app.loading_more_messages);
     }
 }
+
+#[cfg(test)]
+mod channel_members_state {
+    use ttyms::app::App;
+    use ttyms::models::ChannelMember;
+
+    fn make_member(name: &str, owner: bool) -> ChannelMember {
+        ChannelMember {
+            id: Some(format!("id-{}", name)),
+            display_name: Some(name.to_string()),
+            roles: if owner {
+                vec!["owner".to_string()]
+            } else {
+                vec![]
+            },
+        }
+    }
+
+    #[test]
+    fn initially_hidden_and_empty() {
+        let app = App::new();
+        assert!(!app.show_members);
+        assert!(app.channel_members.is_empty());
+    }
+
+    #[test]
+    fn toggle_members_shows_panel() {
+        let mut app = App::new();
+        app.toggle_members();
+        assert!(app.show_members);
+    }
+
+    #[test]
+    fn toggle_members_twice_hides_panel() {
+        let mut app = App::new();
+        app.toggle_members();
+        app.toggle_members();
+        assert!(!app.show_members);
+    }
+
+    #[test]
+    fn channel_members_can_be_set() {
+        let mut app = App::new();
+        app.channel_members = vec![make_member("Alice", true), make_member("Bob", false)];
+        assert_eq!(app.channel_members.len(), 2);
+        assert!(app.channel_members[0].is_owner());
+        assert!(!app.channel_members[1].is_owner());
+    }
+
+    #[test]
+    fn channel_members_cleared_on_reassign() {
+        let mut app = App::new();
+        app.channel_members = vec![make_member("Alice", true)];
+        app.channel_members.clear();
+        assert!(app.channel_members.is_empty());
+    }
+}

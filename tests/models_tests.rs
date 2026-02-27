@@ -1,4 +1,4 @@
-//! Tests for the models module: Chat, Message, strip_html, deserialization
+//! Tests for the models module: Chat, Message, strip_html, ChannelMember, deserialization
 
 // We test via integration tests accessing the public API of the crate.
 // For unit tests inline in modules, see #[cfg(test)] blocks in source files.
@@ -668,5 +668,77 @@ mod paged_response_tests {
         let resp: PagedResponse<Message> = serde_json::from_str(json).unwrap();
         assert!(resp.value.is_empty());
         assert!(resp.next_link.is_none());
+    }
+}
+
+#[cfg(test)]
+mod channel_member_tests {
+    use ttyms::models::ChannelMember;
+
+    fn make_member(name: Option<&str>, roles: Vec<&str>) -> ChannelMember {
+        ChannelMember {
+            id: Some("u1".to_string()),
+            display_name: name.map(|n| n.to_string()),
+            roles: roles.into_iter().map(|r| r.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn name_returns_display_name() {
+        let m = make_member(Some("Alice"), vec![]);
+        assert_eq!(m.name(), "Alice");
+    }
+
+    #[test]
+    fn name_returns_unknown_when_none() {
+        let m = make_member(None, vec![]);
+        assert_eq!(m.name(), "Unknown");
+    }
+
+    #[test]
+    fn is_owner_true_when_role_present() {
+        let m = make_member(Some("Alice"), vec!["owner"]);
+        assert!(m.is_owner());
+    }
+
+    #[test]
+    fn is_owner_false_when_no_roles() {
+        let m = make_member(Some("Bob"), vec![]);
+        assert!(!m.is_owner());
+    }
+
+    #[test]
+    fn is_owner_false_for_other_roles() {
+        let m = make_member(Some("Charlie"), vec!["guest"]);
+        assert!(!m.is_owner());
+    }
+
+    #[test]
+    fn deserialize_channel_member() {
+        let json = r#"{
+            "id": "u1",
+            "displayName": "Alice Smith",
+            "roles": ["owner"]
+        }"#;
+        let m: ChannelMember = serde_json::from_str(json).unwrap();
+        assert_eq!(m.name(), "Alice Smith");
+        assert!(m.is_owner());
+    }
+
+    #[test]
+    fn deserialize_channel_member_minimal() {
+        let json = r#"{"roles": []}"#;
+        let m: ChannelMember = serde_json::from_str(json).unwrap();
+        assert_eq!(m.name(), "Unknown");
+        assert!(!m.is_owner());
+        assert!(m.id.is_none());
+    }
+
+    #[test]
+    fn deserialize_channel_member_default_roles() {
+        let json = r#"{"id": "u1", "displayName": "Bob"}"#;
+        let m: ChannelMember = serde_json::from_str(json).unwrap();
+        assert!(!m.is_owner());
+        assert!(m.roles.is_empty());
     }
 }
