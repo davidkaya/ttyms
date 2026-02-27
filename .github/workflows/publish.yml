@@ -138,14 +138,19 @@ jobs:
           echo "Generated formula:"
           cat ttyms.rb
 
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: davidkaya
+          repositories: homebrew-tap
+
       - name: Push to Homebrew tap
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          if [ -z "$TAP_TOKEN" ]; then
-            echo "::warning::HOMEBREW_TAP_TOKEN not set, skipping tap update"
-            exit 0
-          fi
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/davidkaya/homebrew-tap.git" tap
           mkdir -p tap/Formula
           cp ttyms.rb tap/Formula/ttyms.rb
