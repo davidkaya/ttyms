@@ -64,3 +64,9 @@ It uses the Microsoft Graph API for messaging and OAuth2 for authentication.
 - When a roadmap item is implemented, also add it to the **✅ Shipped** section at the top
 - When all items in a phase are complete, mark the phase header as **SHIPPED**
 - When adding new features not on the roadmap, add them to the appropriate phase or create a new section
+
+### Derived File Hygiene
+- **Always commit `Cargo.lock`** after changing `Cargo.toml` (version bumps, dependency changes)
+- **Bump the version in `Cargo.toml`** when creating a new release tag
+- After any dependency or version change, run `cargo check` to regenerate the lock file before committing
+- Keep generated/derived files (lock files, build configs) in sync — never leave them dirty
