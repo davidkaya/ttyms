@@ -24,6 +24,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 - **Command palette** — `Ctrl+P` fuzzy-find across chats, channels, and actions
 - **Message search** — full-text search across all chats via `/` key
 - **Chat management** — rename group chats, add/remove members, leave chats
+- **File sharing** — upload and share files (up to 4 MB) in chats and channels via `f` key
 - **Settings dialog** — configurable refresh interval via in-app settings
 - **Delta-based sync** — incremental message updates for efficient polling
 - **Secure by design** — tokens stored in OS credential manager, sensitive data zeroized in memory
@@ -162,6 +163,7 @@ cargo run -- --pkce
 | `d` | Delete selected message (own messages only) |
 | `p` | Set your presence status |
 | `/` | Search messages |
+| `f` | Share file (upload and send attachment) |
 | `g` | Manage chat (members, rename) |
 | `o` | Settings |
 | `Ctrl+P` | Command palette — fuzzy-find chats, channels, actions |
@@ -182,6 +184,7 @@ cargo run -- --pkce
 | `w` | Edit selected message (own messages only) |
 | `d` | Delete selected message (own messages only) |
 | `m` | Toggle channel member list |
+| `f` | Share file (upload and send attachment) |
 | `Esc` | Go back one panel / deselect / cancel reply or edit |
 
 ### Global Shortcuts

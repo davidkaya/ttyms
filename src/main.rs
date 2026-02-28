@@ -96,6 +96,9 @@ enum BgResult {
     ChatMembers(Vec<models::ChatMember>),
     ChatManagerAction(String),
     ChatManagerError(String),
+    // File upload results
+    FileUploaded(String),
+    FileUploadError(String),
 }
 
 #[tokio::main]
@@ -340,6 +343,15 @@ async fn run_app(
                         &err,
                     );
                 }
+                BgResult::FileUploaded(msg) => {
+                    app.file_uploading = false;
+                    app.close_dialog();
+                    app.status_message = msg;
+                }
+                BgResult::FileUploadError(err) => {
+                    app.file_uploading = false;
+                    app.file_upload_error = Some(err);
+                }
             }
         }
 
@@ -395,6 +407,10 @@ async fn run_app(
                     }
                     DialogMode::CommandPalette => {
                         handle_command_palette_keys(&mut app, &graph, &bg_tx, key.code).await;
+                        continue;
+                    }
+                    DialogMode::FilePicker => {
+                        handle_file_picker_keys(&mut app, &graph, &bg_tx, key.code).await;
                         continue;
                     }
                     DialogMode::Error(info) => {
@@ -517,11 +533,13 @@ async fn handle_chats_keys(
             KeyCode::Char('g') => {
                 open_chat_manager(app, graph, &bg_tx).await;
             }
+            KeyCode::Char('f') => app.open_file_picker(),
             _ => {}
         },
         Panel::Messages => match code {
             KeyCode::Char('q') => std::process::exit(0),
             KeyCode::Char('n') => app.enter_new_chat_mode(),
+            KeyCode::Char('f') => app.open_file_picker(),
             KeyCode::Tab => app.next_panel(),
             KeyCode::BackTab => app.prev_panel(),
             KeyCode::Up | KeyCode::Char('k') => {
@@ -712,6 +730,7 @@ async fn handle_teams_keys(
                 }
             }
             KeyCode::Char('m') => load_and_toggle_members(graph, app).await,
+            KeyCode::Char('f') => app.open_file_picker(),
             KeyCode::Enter => app.teams_panel = TeamsPanel::ChannelInput,
             KeyCode::Esc => {
                 if app.selected_channel_message.is_some() {
@@ -1227,6 +1246,133 @@ async fn navigate_to_channel(
                 }
             });
         }
+    }
+}
+
+const MAX_FILE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
+
+async fn handle_file_picker_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
+    if app.file_uploading {
+        return; // Ignore input while uploading
+    }
+    match code {
+        KeyCode::Esc => {
+            app.close_dialog();
+        }
+        KeyCode::Enter => {
+            let path_str = app.file_path_input.trim().to_string();
+            if path_str.is_empty() {
+                return;
+            }
+            let path = std::path::Path::new(&path_str);
+            if !path.exists() {
+                app.file_upload_error = Some("File not found".to_string());
+                return;
+            }
+            if !path.is_file() {
+                app.file_upload_error = Some("Not a file".to_string());
+                return;
+            }
+            match std::fs::metadata(path) {
+                Ok(meta) if meta.len() > MAX_FILE_SIZE => {
+                    app.file_upload_error =
+                        Some(format!("File too large (max {}MB)", MAX_FILE_SIZE / 1024 / 1024));
+                    return;
+                }
+                Err(e) => {
+                    app.file_upload_error = Some(format!("Cannot read file: {}", e));
+                    return;
+                }
+                _ => {}
+            }
+            let filename = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file")
+                .to_string();
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    app.file_upload_error = Some(format!("Read error: {}", e));
+                    return;
+                }
+            };
+
+            app.file_uploading = true;
+            app.file_upload_error = None;
+
+            // Determine target (chat or channel)
+            let is_teams = app.view_mode == ViewMode::Teams;
+            let chat_id = if !is_teams {
+                app.selected_chat_id().map(String::from)
+            } else {
+                None
+            };
+            let team_channel = if is_teams {
+                match (
+                    app.selected_team_id().map(String::from),
+                    app.selected_channel_id().map(String::from),
+                ) {
+                    (Some(t), Some(c)) => Some((t, c)),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            let g = graph.clone_for_background();
+            let tx = bg_tx.clone();
+            let fname = filename.clone();
+            tokio::spawn(async move {
+                match g.upload_file(&fname, bytes).await {
+                    Ok(drive_item) => {
+                        // Now send the message with attachment
+                        let send_result = if let Some(cid) = chat_id {
+                            g.send_message_with_attachment(&cid, &fname, &drive_item)
+                                .await
+                        } else if let Some((tid, chid)) = team_channel {
+                            g.send_channel_message_with_attachment(
+                                &tid, &chid, &fname, &drive_item,
+                            )
+                            .await
+                        } else {
+                            Err(anyhow::anyhow!("No chat or channel selected"))
+                        };
+                        match send_result {
+                            Ok(_) => {
+                                let _ = tx.send(BgResult::FileUploaded(
+                                    format!("📎 {} shared", fname),
+                                ));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(BgResult::FileUploadError(
+                                    format!("Upload succeeded but send failed: {}", e),
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(BgResult::FileUploadError(e.to_string()));
+                    }
+                }
+            });
+        }
+        KeyCode::Char(c) => {
+            app.file_picker_insert_char(c);
+            app.file_upload_error = None;
+        }
+        KeyCode::Backspace => {
+            app.file_picker_delete_char();
+            app.file_upload_error = None;
+        }
+        KeyCode::Left => app.file_picker_cursor_left(),
+        KeyCode::Right => app.file_picker_cursor_right(),
+        _ => {}
     }
 }
 

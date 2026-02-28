@@ -1885,3 +1885,89 @@ mod command_palette_tests {
         assert_eq!(app.active_panel, Panel::Messages);
     }
 }
+
+#[cfg(test)]
+mod file_picker_tests {
+    use ttyms::app::{App, DialogMode};
+
+    #[test]
+    fn open_file_picker_sets_dialog() {
+        let mut app = App::new();
+        app.open_file_picker();
+        assert!(matches!(app.dialog, DialogMode::FilePicker));
+        assert!(app.file_path_input.is_empty());
+        assert_eq!(app.file_path_cursor, 0);
+        assert!(!app.file_uploading);
+        assert!(app.file_upload_error.is_none());
+    }
+
+    #[test]
+    fn open_file_picker_clears_previous_state() {
+        let mut app = App::new();
+        app.file_path_input = "/old/path.txt".to_string();
+        app.file_path_cursor = 5;
+        app.file_uploading = true;
+        app.file_upload_error = Some("old error".to_string());
+        app.open_file_picker();
+        assert!(app.file_path_input.is_empty());
+        assert_eq!(app.file_path_cursor, 0);
+        assert!(!app.file_uploading);
+        assert!(app.file_upload_error.is_none());
+    }
+
+    #[test]
+    fn close_file_picker() {
+        let mut app = App::new();
+        app.open_file_picker();
+        app.close_dialog();
+        assert!(matches!(app.dialog, DialogMode::None));
+    }
+
+    #[test]
+    fn file_picker_insert_and_delete() {
+        let mut app = App::new();
+        app.open_file_picker();
+        for c in "/tmp/test.txt".chars() {
+            app.file_picker_insert_char(c);
+        }
+        assert_eq!(app.file_path_input, "/tmp/test.txt");
+        assert_eq!(app.file_path_cursor, 13);
+
+        app.file_picker_delete_char();
+        assert_eq!(app.file_path_input, "/tmp/test.tx");
+        assert_eq!(app.file_path_cursor, 12);
+    }
+
+    #[test]
+    fn file_picker_cursor_movement() {
+        let mut app = App::new();
+        app.open_file_picker();
+        for c in "abc".chars() {
+            app.file_picker_insert_char(c);
+        }
+        assert_eq!(app.file_path_cursor, 3);
+
+        app.file_picker_cursor_left();
+        assert_eq!(app.file_path_cursor, 2);
+
+        app.file_picker_cursor_right();
+        assert_eq!(app.file_path_cursor, 3);
+    }
+
+    #[test]
+    fn file_picker_delete_at_start_is_noop() {
+        let mut app = App::new();
+        app.open_file_picker();
+        app.file_picker_delete_char();
+        assert!(app.file_path_input.is_empty());
+        assert_eq!(app.file_path_cursor, 0);
+    }
+
+    #[test]
+    fn file_upload_error_can_be_set() {
+        let mut app = App::new();
+        app.open_file_picker();
+        app.file_upload_error = Some("File not found".to_string());
+        assert_eq!(app.file_upload_error.as_deref(), Some("File not found"));
+    }
+}

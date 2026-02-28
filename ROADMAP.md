@@ -34,6 +34,7 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Message search** — full-text search across chats via Microsoft Search API (`/search/query`)
 - **Chat management** — rename group chats, view/add/remove members, leave chats via `g` key
 - **Command palette** — `Ctrl+P` fuzzy-find across chats, channels, and actions
+- **Share files in chat** — upload and share files via `f` key (up to 4MB, OneDrive-backed)
 
 ---
 
@@ -78,11 +79,11 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 
 ## 🔵 Phase 4 — File Sharing & Media
 
-### Share files in chat
-Upload and share files within a chat conversation.
-- `PUT /me/chats/{id}/files/content` (upload to OneDrive for Business)
-- Send message with `attachment` referencing the uploaded file
-- Scope: `Files.ReadWrite`
+### ~~Share files in chat~~ ✅
+~~Upload and share files within a chat conversation.~~
+- ~~`PUT /me/drive/root:/Microsoft Teams Chat Files/{filename}:/content` (upload to OneDrive)~~
+- ~~Send message with `attachment` referencing the uploaded file~~
+- ~~Scope: `Files.ReadWrite`~~
 
 ### View shared files
 List files shared in a chat and open them (launch in browser or download).

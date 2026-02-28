@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Message search** — full-text search across all chats via `/` key, powered by Microsoft Search API (`POST /search/query` with `chatMessage` entity type); shows sender, timestamp, and summary snippet; Enter on a result navigates to the chat
 - **Chat management** — manage chats via `g` key: tabbed dialog with member list (view/remove), rename group chats, and add members with user search; leave chat via `l` key
 - **Command palette** — `Ctrl+P` opens a fuzzy-find palette across all chats, team channels, and quick actions (New Chat, Search, Set Status, Settings, Quit); type to filter, arrow keys to navigate, Enter to execute
+- **File sharing** — upload and share files in chats and channels via `f` key; uploads to OneDrive and sends an attachment reference message (up to 4 MB)
 
 ## [0.1.4] - 2026-02-27
 

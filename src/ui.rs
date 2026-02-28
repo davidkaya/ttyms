@@ -117,6 +117,7 @@ fn draw_main(frame: &mut Frame, app: &App) {
         DialogMode::Search => draw_search_dialog(frame, app),
         DialogMode::ChatManager => draw_chat_manager_dialog(frame, app),
         DialogMode::CommandPalette => draw_command_palette(frame, app),
+        DialogMode::FilePicker => draw_file_picker(frame, app),
         DialogMode::Error(info) => draw_error_dialog(frame, info),
         DialogMode::None => {}
     }
@@ -836,6 +837,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
                 Panel::Input => {}
             }
+            add_shortcut("f", "Share File", &mut spans);
             add_shortcut("/", "Search", &mut spans);
             add_shortcut("C-p", "Palette", &mut spans);
             add_shortcut("p", "Set Status", &mut spans);
@@ -867,6 +869,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                         add_shortcut("r", "Refresh", &mut spans);
                     }
                     add_shortcut("m", "Members", &mut spans);
+                    add_shortcut("f", "Share File", &mut spans);
                     add_shortcut("Enter", "Write Message", &mut spans);
                     add_shortcut("Esc", "Back", &mut spans);
                 }
@@ -1208,6 +1211,86 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
 
     let cursor_pos = app.palette_input[..app.palette_cursor].chars().count() as u16;
     frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y));
+}
+
+fn draw_file_picker(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+    let has_error = app.file_upload_error.is_some();
+    let dialog_height = if app.file_uploading {
+        8
+    } else if has_error {
+        9
+    } else {
+        8
+    };
+    let popup = centered_rect(65, dialog_height.min(area.height.saturating_sub(4)), area);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" Share File ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let display_input = if app.file_path_input.is_empty() {
+        "Enter file path…"
+    } else {
+        &app.file_path_input
+    };
+    let input_style = if app.file_path_input.is_empty() {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "📎 File path:",
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Green)),
+            Span::styled(display_input, input_style),
+        ]),
+    ];
+
+    if app.file_uploading {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "⏳ Uploading…",
+            Style::default().fg(Color::Yellow),
+        )));
+    } else if let Some(ref err) = app.file_upload_error {
+        lines.push(Line::from(""));
+        let max_len = inner.width.saturating_sub(4) as usize;
+        let truncated = if err.len() > max_len {
+            format!("{}…", &err[..max_len.saturating_sub(1)])
+        } else {
+            err.clone()
+        };
+        lines.push(Line::from(Span::styled(
+            format!("⚠ {}", truncated),
+            Style::default().fg(Color::Red),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Max 4MB  │  Enter: upload & send  │  Esc: cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+
+    if !app.file_uploading {
+        let cursor_pos = app.file_path_input[..app.file_path_cursor]
+            .chars()
+            .count() as u16;
+        frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y + 1));
+    }
 }
 
 fn draw_search_dialog(frame: &mut Frame, app: &App) {

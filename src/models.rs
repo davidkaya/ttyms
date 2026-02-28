@@ -326,6 +326,21 @@ pub const PRESENCE_STATUSES: &[(&str, &str)] = &[
     ("Offline", "⚫ Appear Offline"),
 ];
 
+// ---- DriveItem (file upload response) ----
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct DriveItem {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "webUrl")]
+    pub web_url: String,
+    #[serde(rename = "eTag", default)]
+    pub e_tag: Option<String>,
+    #[serde(default)]
+    pub size: Option<i64>,
+}
+
 // ---- Search results ----
 
 #[derive(Debug, Clone, Deserialize)]

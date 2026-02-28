@@ -153,6 +153,30 @@ impl GraphClient {
         Ok(())
     }
 
+    async fn put_bytes<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        bytes: Vec<u8>,
+        content_type: &str,
+    ) -> Result<T> {
+        let resp = self
+            .client
+            .put(url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .header("Content-Type", content_type)
+            .body(bytes)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Graph API error ({}): {}", status, body);
+        }
+        resp.json::<T>()
+            .await
+            .context("Failed to parse Graph API response")
+    }
+
     // ---- User & Profile ----
 
     pub async fn get_me(&self) -> Result<User> {
@@ -523,6 +547,75 @@ impl GraphClient {
                 "content": content,
                 "contentType": "text"
             }
+        });
+        self.post_json(&url, &body).await
+    }
+
+    // ---- File Upload ----
+
+    /// Upload a file to OneDrive (Microsoft Teams Chat Files folder) and return the DriveItem
+    pub async fn upload_file(&self, filename: &str, bytes: Vec<u8>) -> Result<DriveItem> {
+        let encoded_name = filename.replace('\'', "''");
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/me/drive/root:/Microsoft Teams Chat Files/{}:/content",
+            encoded_name
+        );
+        self.put_bytes(&url, bytes, "application/octet-stream").await
+    }
+
+    /// Send a chat message with a file attachment reference
+    pub async fn send_message_with_attachment(
+        &self,
+        chat_id: &str,
+        filename: &str,
+        drive_item: &DriveItem,
+    ) -> Result<Message> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/me/chats/{}/messages",
+            chat_id
+        );
+        let raw_tag = drive_item.e_tag.as_deref().unwrap_or(&drive_item.id);
+        let attachment_id = raw_tag.trim_matches('"');
+        let body = serde_json::json!({
+            "body": {
+                "contentType": "html",
+                "content": format!("<attachment id=\"{}\"></attachment>", attachment_id)
+            },
+            "attachments": [{
+                "id": attachment_id,
+                "contentType": "reference",
+                "contentUrl": drive_item.web_url,
+                "name": filename
+            }]
+        });
+        self.post_json(&url, &body).await
+    }
+
+    /// Send a channel message with a file attachment reference
+    pub async fn send_channel_message_with_attachment(
+        &self,
+        team_id: &str,
+        channel_id: &str,
+        filename: &str,
+        drive_item: &DriveItem,
+    ) -> Result<Message> {
+        let url = format!(
+            "https://graph.microsoft.com/v1.0/teams/{}/channels/{}/messages",
+            team_id, channel_id
+        );
+        let raw_tag = drive_item.e_tag.as_deref().unwrap_or(&drive_item.id);
+        let attachment_id = raw_tag.trim_matches('"');
+        let body = serde_json::json!({
+            "body": {
+                "contentType": "html",
+                "content": format!("<attachment id=\"{}\"></attachment>", attachment_id)
+            },
+            "attachments": [{
+                "id": attachment_id,
+                "contentType": "reference",
+                "contentUrl": drive_item.web_url,
+                "name": filename
+            }]
         });
         self.post_json(&url, &body).await
     }

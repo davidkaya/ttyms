@@ -948,3 +948,39 @@ mod chat_member_deserialization_tests {
         assert_eq!(resp.value[1].id.as_deref(), Some("m2"));
     }
 }
+
+#[cfg(test)]
+mod drive_item_tests {
+    use ttyms::models::DriveItem;
+
+    #[test]
+    fn deserialize_drive_item() {
+        let json = r#"{
+            "id": "item-123",
+            "name": "report.pdf",
+            "webUrl": "https://contoso.sharepoint.com/report.pdf",
+            "eTag": "\"etag-abc\"",
+            "size": 1024
+        }"#;
+        let item: DriveItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.id, "item-123");
+        assert_eq!(item.name, "report.pdf");
+        assert_eq!(item.web_url, "https://contoso.sharepoint.com/report.pdf");
+        assert_eq!(item.e_tag.as_deref(), Some("\"etag-abc\""));
+        assert_eq!(item.size, Some(1024));
+    }
+
+    #[test]
+    fn deserialize_drive_item_minimal() {
+        let json = r#"{
+            "id": "item-456",
+            "name": "notes.txt",
+            "webUrl": "https://contoso.sharepoint.com/notes.txt"
+        }"#;
+        let item: DriveItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.id, "item-456");
+        assert_eq!(item.name, "notes.txt");
+        assert!(item.e_tag.is_none());
+        assert!(item.size.is_none());
+    }
+}

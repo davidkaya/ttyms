@@ -55,6 +55,7 @@ pub enum DialogMode {
     Search,
     ChatManager,
     CommandPalette,
+    FilePicker,
     Error(ErrorInfo),
 }
 
@@ -204,6 +205,12 @@ pub struct App {
     pub palette_items: Vec<PaletteItem>,
     pub palette_filtered: Vec<usize>,
     pub palette_selected: usize,
+
+    // File picker
+    pub file_path_input: String,
+    pub file_path_cursor: usize,
+    pub file_uploading: bool,
+    pub file_upload_error: Option<String>,
 }
 
 impl App {
@@ -284,6 +291,10 @@ impl App {
             palette_items: Vec::new(),
             palette_filtered: Vec::new(),
             palette_selected: 0,
+            file_path_input: String::new(),
+            file_path_cursor: 0,
+            file_uploading: false,
+            file_upload_error: None,
         }
     }
 
@@ -723,6 +734,53 @@ impl App {
                 .collect();
         }
         self.palette_selected = 0;
+    }
+
+    pub fn open_file_picker(&mut self) {
+        self.dialog = DialogMode::FilePicker;
+        self.file_path_input.clear();
+        self.file_path_cursor = 0;
+        self.file_uploading = false;
+        self.file_upload_error = None;
+    }
+
+    pub fn file_picker_insert_char(&mut self, c: char) {
+        self.file_path_input.insert(self.file_path_cursor, c);
+        self.file_path_cursor += c.len_utf8();
+    }
+
+    pub fn file_picker_delete_char(&mut self) {
+        if self.file_path_cursor > 0 {
+            let prev_len = self.file_path_input[..self.file_path_cursor]
+                .chars()
+                .last()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
+            self.file_path_cursor -= prev_len;
+            self.file_path_input.remove(self.file_path_cursor);
+        }
+    }
+
+    pub fn file_picker_cursor_left(&mut self) {
+        if self.file_path_cursor > 0 {
+            let prev_len = self.file_path_input[..self.file_path_cursor]
+                .chars()
+                .last()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
+            self.file_path_cursor -= prev_len;
+        }
+    }
+
+    pub fn file_picker_cursor_right(&mut self) {
+        if self.file_path_cursor < self.file_path_input.len() {
+            let next_len = self.file_path_input[self.file_path_cursor..]
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
+            self.file_path_cursor += next_len;
+        }
     }
 
     #[allow(dead_code)]
