@@ -21,6 +21,11 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 - **Unread indicators** — unread message counts per chat, total unread badge in header
 - **Rich text rendering** — bold, italic, code, and links rendered with terminal formatting
 - **Beautiful TUI** — clean terminal interface with tabbed views, panels, color-coded messages
+- **Command palette** — `Ctrl+P` fuzzy-find across chats, channels, and actions
+- **Message search** — full-text search across all chats via `/` key
+- **Chat management** — rename group chats, add/remove members, leave chats
+- **Settings dialog** — configurable refresh interval via in-app settings
+- **Delta-based sync** — incremental message updates for efficient polling
 - **Secure by design** — tokens stored in OS credential manager, sensitive data zeroized in memory
 - **Auto-refresh** — messages update automatically every 15 seconds with terminal bell for new messages
 - **Vim-style navigation** — use `j`/`k` or arrow keys to navigate
@@ -156,6 +161,10 @@ cargo run -- --pkce
 | `w` | Edit selected message (own messages only) |
 | `d` | Delete selected message (own messages only) |
 | `p` | Set your presence status |
+| `/` | Search messages |
+| `g` | Manage chat (members, rename) |
+| `o` | Settings |
+| `Ctrl+P` | Command palette — fuzzy-find chats, channels, actions |
 | `Esc` | Back / deselect / cancel reply or edit |
 | `q` | Quit |
 | `Ctrl+C` | Force quit |
@@ -174,6 +183,16 @@ cargo run -- --pkce
 | `d` | Delete selected message (own messages only) |
 | `m` | Toggle channel member list |
 | `Esc` | Go back one panel / deselect / cancel reply or edit |
+
+### Global Shortcuts
+
+| Key | Action |
+|---|---|
+| `Ctrl+P` | Command palette — fuzzy-find chats, channels, actions |
+| `/` | Search messages |
+| `p` | Set your presence status |
+| `o` | Settings |
+| `1` / `2` | Switch between Chats and Teams views |
 
 ### Reaction Picker
 

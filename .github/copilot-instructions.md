@@ -77,3 +77,9 @@ It uses the Microsoft Graph API for messaging and OAuth2 for authentication.
 - **Bump the version in `Cargo.toml`** when creating a new release tag
 - After any dependency or version change, run `cargo check` to regenerate the lock file before committing
 - Keep generated/derived files (lock files, build configs) in sync — never leave them dirty
+
+### README
+- **Always keep `README.md` up-to-date** when adding features, changing keybindings, or modifying UI behavior
+- New keyboard shortcuts must be added to the appropriate shortcuts table
+- New features must be listed in the Features section
+- Installation methods must be documented when new distribution channels are added
