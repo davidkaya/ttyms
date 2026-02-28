@@ -29,3 +29,4 @@ zeroize = "1"
 sha2 = "0.10"
 base64 = "0.22"
 rand = "0.10"
+uuid = { version = "1", features = ["v4"] }

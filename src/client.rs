@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 use crate::models::*;
@@ -575,7 +574,7 @@ impl GraphClient {
             "https://graph.microsoft.com/v1.0/me/chats/{}/messages",
             chat_id
         );
-        let attachment_id = generate_attachment_guid(&drive_item.id);
+        let attachment_id = uuid::Uuid::new_v4().to_string();
         let body = serde_json::json!({
             "body": {
                 "contentType": "html",
@@ -603,7 +602,7 @@ impl GraphClient {
             "https://graph.microsoft.com/v1.0/teams/{}/channels/{}/messages",
             team_id, channel_id
         );
-        let attachment_id = generate_attachment_guid(&drive_item.id);
+        let attachment_id = uuid::Uuid::new_v4().to_string();
         let body = serde_json::json!({
             "body": {
                 "contentType": "html",
@@ -676,19 +675,4 @@ impl Drop for GraphClient {
     fn drop(&mut self) {
         self.access_token.zeroize();
     }
-}
-
-/// Generate a GUID-formatted string from a drive item id using SHA-256.
-/// Graph API requires the attachment id to be a valid GUID format.
-fn generate_attachment_guid(drive_item_id: &str) -> String {
-    let hash = Sha256::digest(drive_item_id.as_bytes());
-    format!(
-        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
-        u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]),
-        u16::from_be_bytes([hash[4], hash[5]]),
-        u16::from_be_bytes([hash[6], hash[7]]),
-        u16::from_be_bytes([hash[8], hash[9]]),
-        // 6 bytes → 48-bit value for the last segment
-        u64::from_be_bytes([0, 0, hash[10], hash[11], hash[12], hash[13], hash[14], hash[15]])
-    )
 }
