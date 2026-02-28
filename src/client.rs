@@ -574,8 +574,7 @@ impl GraphClient {
             "https://graph.microsoft.com/v1.0/me/chats/{}/messages",
             chat_id
         );
-        let raw_tag = drive_item.e_tag.as_deref().unwrap_or(&drive_item.id);
-        let attachment_id = raw_tag.trim_matches('"');
+        let attachment_id = &drive_item.id;
         let body = serde_json::json!({
             "body": {
                 "contentType": "html",
@@ -603,8 +602,7 @@ impl GraphClient {
             "https://graph.microsoft.com/v1.0/teams/{}/channels/{}/messages",
             team_id, channel_id
         );
-        let raw_tag = drive_item.e_tag.as_deref().unwrap_or(&drive_item.id);
-        let attachment_id = raw_tag.trim_matches('"');
+        let attachment_id = &drive_item.id;
         let body = serde_json::json!({
             "body": {
                 "contentType": "html",
