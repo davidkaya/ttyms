@@ -33,6 +33,7 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Delta-based message sync** — incremental message updates via Graph delta queries
 - **Message search** — full-text search across chats via Microsoft Search API (`/search/query`)
 - **Chat management** — rename group chats, view/add/remove members, leave chats via `g` key
+- **Command palette** — `Ctrl+P` fuzzy-find across chats, channels, and actions
 
 ---
 
@@ -158,9 +159,9 @@ User-selectable color themes (dark, light, solarized, nord, etc.).
 Click to select chats, scroll messages, focus input.
 - No API — crossterm mouse event handling (already available in the dependency)
 
-### Command palette
-`Ctrl+P` fuzzy-find across chats, channels, people, and actions.
-- Combine results from `/me/chats`, `/me/joinedTeams`, `/me/people`
+### ~~Command palette~~ ✅
+~~`Ctrl+P` fuzzy-find across chats, channels, people, and actions.~~
+- ~~Combine results from `/me/chats`, `/me/joinedTeams`, `/me/people`~~
 
 ### Markdown message composition
 Write messages in markdown, convert to Teams-compatible HTML before sending.

@@ -54,7 +54,31 @@ pub enum DialogMode {
     Settings,
     Search,
     ChatManager,
+    CommandPalette,
     Error(ErrorInfo),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PaletteItemKind {
+    Chat(String),           // chat_id
+    Channel(String, String), // team_id, channel_id
+    Action(PaletteAction),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PaletteAction {
+    NewChat,
+    Search,
+    SetStatus,
+    Settings,
+    Quit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaletteItem {
+    pub label: String,
+    pub kind: PaletteItemKind,
+    pub icon: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -173,6 +197,13 @@ pub struct App {
     pub chat_manager_add_suggestions: Vec<UserSuggestion>,
     pub chat_manager_add_selected: usize,
     pub chat_manager_loading: bool,
+
+    // Command palette
+    pub palette_input: String,
+    pub palette_cursor: usize,
+    pub palette_items: Vec<PaletteItem>,
+    pub palette_filtered: Vec<usize>,
+    pub palette_selected: usize,
 }
 
 impl App {
@@ -248,6 +279,11 @@ impl App {
             chat_manager_add_suggestions: Vec::new(),
             chat_manager_add_selected: 0,
             chat_manager_loading: false,
+            palette_input: String::new(),
+            palette_cursor: 0,
+            palette_items: Vec::new(),
+            palette_filtered: Vec::new(),
+            palette_selected: 0,
         }
     }
 
@@ -606,6 +642,87 @@ impl App {
         self.chat_manager_add_suggestions.clear();
         self.chat_manager_add_selected = 0;
         self.chat_manager_loading = true;
+    }
+
+    pub fn open_command_palette(&mut self) {
+        self.dialog = DialogMode::CommandPalette;
+        self.palette_input.clear();
+        self.palette_cursor = 0;
+        self.palette_selected = 0;
+        self.build_palette_items();
+        self.palette_filter();
+    }
+
+    pub fn build_palette_items(&mut self) {
+        let mut items = Vec::new();
+        let uid = self.current_user_id().to_string();
+
+        // Chats
+        for chat in &self.chats {
+            items.push(PaletteItem {
+                label: chat.display_name(&uid),
+                kind: PaletteItemKind::Chat(chat.id.clone()),
+                icon: "💬",
+            });
+        }
+
+        // Channels from cache
+        for team in &self.teams {
+            if let Some(channels) = self.channels_cache.get(&team.id) {
+                for ch in channels {
+                    items.push(PaletteItem {
+                        label: format!("{} › #{}", team.display_name, ch.display_name),
+                        kind: PaletteItemKind::Channel(team.id.clone(), ch.id.clone()),
+                        icon: "📢",
+                    });
+                }
+            }
+        }
+
+        // Actions
+        items.push(PaletteItem {
+            label: "New Chat".to_string(),
+            kind: PaletteItemKind::Action(PaletteAction::NewChat),
+            icon: "✉️",
+        });
+        items.push(PaletteItem {
+            label: "Search Messages".to_string(),
+            kind: PaletteItemKind::Action(PaletteAction::Search),
+            icon: "🔍",
+        });
+        items.push(PaletteItem {
+            label: "Set Status / Presence".to_string(),
+            kind: PaletteItemKind::Action(PaletteAction::SetStatus),
+            icon: "🟢",
+        });
+        items.push(PaletteItem {
+            label: "Settings".to_string(),
+            kind: PaletteItemKind::Action(PaletteAction::Settings),
+            icon: "⚙️",
+        });
+        items.push(PaletteItem {
+            label: "Quit".to_string(),
+            kind: PaletteItemKind::Action(PaletteAction::Quit),
+            icon: "🚪",
+        });
+
+        self.palette_items = items;
+    }
+
+    pub fn palette_filter(&mut self) {
+        let query = self.palette_input.to_lowercase();
+        if query.is_empty() {
+            self.palette_filtered = (0..self.palette_items.len()).collect();
+        } else {
+            self.palette_filtered = self
+                .palette_items
+                .iter()
+                .enumerate()
+                .filter(|(_, item)| item.label.to_lowercase().contains(&query))
+                .map(|(i, _)| i)
+                .collect();
+        }
+        self.palette_selected = 0;
     }
 
     #[allow(dead_code)]

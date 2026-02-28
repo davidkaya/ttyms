@@ -116,6 +116,7 @@ fn draw_main(frame: &mut Frame, app: &App) {
         DialogMode::Settings => draw_settings_dialog(frame, app),
         DialogMode::Search => draw_search_dialog(frame, app),
         DialogMode::ChatManager => draw_chat_manager_dialog(frame, app),
+        DialogMode::CommandPalette => draw_command_palette(frame, app),
         DialogMode::Error(info) => draw_error_dialog(frame, info),
         DialogMode::None => {}
     }
@@ -836,6 +837,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Panel::Input => {}
             }
             add_shortcut("/", "Search", &mut spans);
+            add_shortcut("C-p", "Palette", &mut spans);
             add_shortcut("p", "Set Status", &mut spans);
             add_shortcut("o", "Settings", &mut spans);
             add_shortcut("q", "Quit", &mut spans);
@@ -874,6 +876,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 }
             }
             add_shortcut("/", "Search", &mut spans);
+            add_shortcut("C-p", "Palette", &mut spans);
             add_shortcut("p", "Set Status", &mut spans);
             add_shortcut("o", "Settings", &mut spans);
             add_shortcut("q", "Quit", &mut spans);
@@ -1133,6 +1136,78 @@ fn draw_settings_dialog(frame: &mut Frame, app: &App) {
 
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
+}
+
+fn draw_command_palette(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+    let visible_count = app.palette_filtered.len().min(10);
+    let dialog_height = (5 + visible_count as u16).min(area.height.saturating_sub(4));
+    let popup = centered_rect(60, dialog_height, area);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" Command Palette ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let display_input = if app.palette_input.is_empty() {
+        "Type to search chats, channels, actions…"
+    } else {
+        &app.palette_input
+    };
+    let input_style = if app.palette_input.is_empty() {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let mut lines = vec![Line::from(vec![
+        Span::styled("> ", Style::default().fg(Color::Magenta)),
+        Span::styled(display_input, input_style),
+    ])];
+
+    if !app.palette_filtered.is_empty() {
+        lines.push(Line::from(""));
+        for (vi, &idx) in app.palette_filtered.iter().take(10).enumerate() {
+            if let Some(item) = app.palette_items.get(idx) {
+                let is_selected = vi == app.palette_selected;
+                let indicator = if is_selected { "▸ " } else { "  " };
+                let name_style = if is_selected {
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                let max_len = inner.width.saturating_sub(6) as usize;
+                let label = if item.label.len() > max_len {
+                    format!("{}…", &item.label[..max_len.saturating_sub(1)])
+                } else {
+                    item.label.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(indicator, name_style),
+                    Span::raw(format!("{} ", item.icon)),
+                    Span::styled(label, name_style),
+                ]));
+            }
+        }
+    } else if !app.palette_input.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "No matches",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+
+    let cursor_pos = app.palette_input[..app.palette_cursor].chars().count() as u16;
+    frame.set_cursor_position((inner.x + 2 + cursor_pos, inner.y));
 }
 
 fn draw_search_dialog(frame: &mut Frame, app: &App) {

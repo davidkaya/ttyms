@@ -358,6 +358,15 @@ async fn run_app(
                     break;
                 }
 
+                // Ctrl+P opens command palette (always, unless already in a dialog)
+                if key.code == KeyCode::Char('p')
+                    && key.modifiers.contains(KeyModifiers::CONTROL)
+                    && app.dialog == app::DialogMode::None
+                {
+                    app.open_command_palette();
+                    continue;
+                }
+
                 // Dialog mode intercepts all keys
                 match &app.dialog {
                     DialogMode::NewChat => {
@@ -382,6 +391,10 @@ async fn run_app(
                     }
                     DialogMode::ChatManager => {
                         handle_chat_manager_keys(&mut app, &graph, &bg_tx, key.code).await;
+                        continue;
+                    }
+                    DialogMode::CommandPalette => {
+                        handle_command_palette_keys(&mut app, &graph, &bg_tx, key.code).await;
                         continue;
                     }
                     DialogMode::Error(info) => {
@@ -1106,6 +1119,114 @@ async fn handle_search_keys(
             }
         }
         _ => {}
+    }
+}
+
+async fn handle_command_palette_keys(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    code: KeyCode,
+) {
+    match code {
+        KeyCode::Esc => {
+            app.close_dialog();
+        }
+        KeyCode::Enter => {
+            if let Some(&idx) = app.palette_filtered.get(app.palette_selected) {
+                if let Some(item) = app.palette_items.get(idx).cloned() {
+                    app.close_dialog();
+                    match item.kind {
+                        app::PaletteItemKind::Chat(chat_id) => {
+                            if app.navigate_to_chat(&chat_id) {
+                                load_messages(graph, app).await;
+                            }
+                        }
+                        app::PaletteItemKind::Channel(team_id, channel_id) => {
+                            app.switch_to_teams();
+                            navigate_to_channel(app, graph, bg_tx, &team_id, &channel_id).await;
+                        }
+                        app::PaletteItemKind::Action(action) => match action {
+                            app::PaletteAction::NewChat => app.enter_new_chat_mode(),
+                            app::PaletteAction::Search => app.open_search(),
+                            app::PaletteAction::SetStatus => app.open_presence_picker(),
+                            app::PaletteAction::Settings => app.open_settings(),
+                            app::PaletteAction::Quit => std::process::exit(0),
+                        },
+                    }
+                }
+            }
+        }
+        KeyCode::Up => {
+            app.palette_selected = app.palette_selected.saturating_sub(1);
+        }
+        KeyCode::Down => {
+            if !app.palette_filtered.is_empty() {
+                app.palette_selected = (app.palette_selected + 1)
+                    .min(app.palette_filtered.len().saturating_sub(1));
+            }
+        }
+        KeyCode::Char(c) => {
+            app.palette_input.insert(app.palette_cursor, c);
+            app.palette_cursor += c.len_utf8();
+            app.palette_filter();
+        }
+        KeyCode::Backspace => {
+            if app.palette_cursor > 0 {
+                let prev_len = app.palette_input[..app.palette_cursor]
+                    .chars()
+                    .last()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(0);
+                app.palette_cursor -= prev_len;
+                app.palette_input.remove(app.palette_cursor);
+                app.palette_filter();
+            }
+        }
+        KeyCode::Left => {
+            app.palette_cursor = app.palette_cursor.saturating_sub(1);
+        }
+        KeyCode::Right => {
+            if app.palette_cursor < app.palette_input.len() {
+                app.palette_cursor += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn navigate_to_channel(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    team_id: &str,
+    channel_id: &str,
+) {
+    // Find and select the team
+    if let Some(team_idx) = app.teams.iter().position(|t| t.id == team_id) {
+        app.selected_team = team_idx;
+        // Load channels if not cached
+        if let Some(cached) = app.channels_cache.get(team_id) {
+            app.channels = cached.clone();
+        } else if let Ok(channels) = graph.list_channels(team_id).await {
+            app.channels_cache.insert(team_id.to_string(), channels.clone());
+            app.channels = channels;
+        }
+        // Find and select the channel
+        if let Some(ch_idx) = app.channels.iter().position(|c| c.id == channel_id) {
+            app.selected_channel = ch_idx;
+            app.teams_panel = app::TeamsPanel::ChannelMessages;
+            // Load channel messages
+            let tid = team_id.to_string();
+            let cid = channel_id.to_string();
+            let g = graph.clone_for_background();
+            let tx = bg_tx.clone();
+            tokio::spawn(async move {
+                if let Ok((msgs, _next_link)) = g.get_channel_messages(&tid, &cid).await {
+                    let _ = tx.send(BgResult::ChannelMessages(cid, msgs));
+                }
+            });
+        }
     }
 }
 

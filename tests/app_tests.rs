@@ -1678,3 +1678,210 @@ mod chat_manager_tests {
         assert_eq!(app.chat_manager_rename_input, "New Nam");
     }
 }
+
+#[cfg(test)]
+mod command_palette_tests {
+    use ttyms::app::{
+        App, DialogMode, PaletteItemKind, Panel, ViewMode,
+    };
+    use ttyms::models::*;
+
+    fn make_chat(id: &str, topic: &str) -> Chat {
+        Chat {
+            id: id.to_string(),
+            topic: Some(topic.to_string()),
+            chat_type: "oneOnOne".to_string(),
+            members: None,
+            last_message_preview: None,
+            unread_message_count: None,
+        }
+    }
+
+    fn make_team(id: &str, name: &str) -> Team {
+        Team {
+            id: id.to_string(),
+            display_name: name.to_string(),
+            description: None,
+        }
+    }
+
+    fn make_channel(id: &str, name: &str) -> Channel {
+        Channel {
+            id: id.to_string(),
+            display_name: name.to_string(),
+            description: None,
+            membership_type: None,
+        }
+    }
+
+    #[test]
+    fn open_palette_sets_dialog() {
+        let mut app = App::new();
+        app.open_command_palette();
+        assert!(matches!(app.dialog, DialogMode::CommandPalette));
+        assert!(app.palette_input.is_empty());
+        assert_eq!(app.palette_cursor, 0);
+        assert_eq!(app.palette_selected, 0);
+    }
+
+    #[test]
+    fn open_palette_clears_previous_state() {
+        let mut app = App::new();
+        app.palette_input = "old query".to_string();
+        app.palette_cursor = 5;
+        app.palette_selected = 3;
+        app.open_command_palette();
+        assert!(app.palette_input.is_empty());
+        assert_eq!(app.palette_cursor, 0);
+        assert_eq!(app.palette_selected, 0);
+    }
+
+    #[test]
+    fn close_palette() {
+        let mut app = App::new();
+        app.open_command_palette();
+        app.close_dialog();
+        assert!(matches!(app.dialog, DialogMode::None));
+    }
+
+    #[test]
+    fn palette_includes_chats() {
+        let mut app = App::new();
+        app.chats = vec![
+            make_chat("c1", "Design Review"),
+            make_chat("c2", "Standup"),
+        ];
+        app.open_command_palette();
+        let chat_items: Vec<_> = app
+            .palette_items
+            .iter()
+            .filter(|i| matches!(i.kind, PaletteItemKind::Chat(_)))
+            .collect();
+        assert_eq!(chat_items.len(), 2);
+        assert_eq!(chat_items[0].label, "Design Review");
+        assert_eq!(chat_items[1].label, "Standup");
+    }
+
+    #[test]
+    fn palette_includes_channels_from_cache() {
+        let mut app = App::new();
+        app.teams = vec![make_team("t1", "Engineering")];
+        app.channels_cache.insert(
+            "t1".to_string(),
+            vec![
+                make_channel("ch1", "general"),
+                make_channel("ch2", "random"),
+            ],
+        );
+        app.open_command_palette();
+        let channel_items: Vec<_> = app
+            .palette_items
+            .iter()
+            .filter(|i| matches!(i.kind, PaletteItemKind::Channel(_, _)))
+            .collect();
+        assert_eq!(channel_items.len(), 2);
+        assert_eq!(channel_items[0].label, "Engineering › #general");
+        assert_eq!(channel_items[1].label, "Engineering › #random");
+    }
+
+    #[test]
+    fn palette_includes_actions() {
+        let mut app = App::new();
+        app.open_command_palette();
+        let action_items: Vec<_> = app
+            .palette_items
+            .iter()
+            .filter(|i| matches!(i.kind, PaletteItemKind::Action(_)))
+            .collect();
+        assert!(action_items.len() >= 5);
+        let labels: Vec<&str> = action_items.iter().map(|i| i.label.as_str()).collect();
+        assert!(labels.contains(&"New Chat"));
+        assert!(labels.contains(&"Search Messages"));
+        assert!(labels.contains(&"Set Status / Presence"));
+        assert!(labels.contains(&"Settings"));
+        assert!(labels.contains(&"Quit"));
+    }
+
+    #[test]
+    fn palette_filter_empty_shows_all() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("c1", "Alpha"), make_chat("c2", "Beta")];
+        app.open_command_palette();
+        let total = app.palette_items.len();
+        assert_eq!(app.palette_filtered.len(), total);
+    }
+
+    #[test]
+    fn palette_filter_narrows_results() {
+        let mut app = App::new();
+        app.chats = vec![
+            make_chat("c1", "Design Review"),
+            make_chat("c2", "Standup"),
+        ];
+        app.open_command_palette();
+        app.palette_input = "design".to_string();
+        app.palette_filter();
+        // Should match "Design Review" only (plus no actions match "design")
+        assert!(app.palette_filtered.len() >= 1);
+        let matched: Vec<_> = app
+            .palette_filtered
+            .iter()
+            .map(|&i| &app.palette_items[i])
+            .collect();
+        assert!(matched.iter().any(|i| i.label.contains("Design")));
+        assert!(!matched.iter().any(|i| i.label == "Standup"));
+    }
+
+    #[test]
+    fn palette_filter_case_insensitive() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("c1", "Engineering")];
+        app.open_command_palette();
+        app.palette_input = "ENGINEERING".to_string();
+        app.palette_filter();
+        let matched: Vec<_> = app
+            .palette_filtered
+            .iter()
+            .map(|&i| &app.palette_items[i])
+            .collect();
+        assert!(matched.iter().any(|i| i.label == "Engineering"));
+    }
+
+    #[test]
+    fn palette_filter_no_match() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("c1", "Alpha")];
+        app.open_command_palette();
+        app.palette_input = "zzzznothing".to_string();
+        app.palette_filter();
+        assert!(app.palette_filtered.is_empty());
+    }
+
+    #[test]
+    fn palette_filter_resets_selection() {
+        let mut app = App::new();
+        app.chats = vec![make_chat("c1", "A"), make_chat("c2", "B")];
+        app.open_command_palette();
+        app.palette_selected = 3;
+        app.palette_input = "A".to_string();
+        app.palette_filter();
+        assert_eq!(app.palette_selected, 0);
+    }
+
+    #[test]
+    fn palette_navigate_to_chat_on_select() {
+        let mut app = App::new();
+        app.chats = vec![
+            make_chat("c1", "First"),
+            make_chat("c2", "Second"),
+        ];
+        app.selected_chat = 0;
+        app.view_mode = ViewMode::Teams;
+
+        // Simulate selecting the second chat
+        assert!(app.navigate_to_chat("c2"));
+        assert_eq!(app.selected_chat, 1);
+        assert_eq!(app.view_mode, ViewMode::Chats);
+        assert_eq!(app.active_panel, Panel::Messages);
+    }
+}
