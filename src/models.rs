@@ -73,6 +73,8 @@ pub struct Message {
     pub created_date_time: Option<String>,
     #[serde(default)]
     pub reactions: Option<Vec<ChatMessageReaction>>,
+    #[serde(default)]
+    pub attachments: Vec<ChatMessageAttachment>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -93,6 +95,17 @@ pub struct MessageUser {
     #[serde(rename = "displayName")]
     pub display_name: Option<String>,
     pub id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ChatMessageAttachment {
+    pub id: Option<String>,
+    #[serde(rename = "contentType")]
+    pub content_type: Option<String>,
+    #[serde(rename = "contentUrl")]
+    pub content_url: Option<String>,
+    pub name: Option<String>,
 }
 
 // Reaction types
@@ -254,6 +267,13 @@ impl Message {
             .collect();
         result.sort_by(|a, b| b.1.cmp(&a.1));
         result
+    }
+
+    pub fn file_attachments(&self) -> Vec<&ChatMessageAttachment> {
+        self.attachments
+            .iter()
+            .filter(|a| a.content_type.as_deref() == Some("reference"))
+            .collect()
     }
 }
 

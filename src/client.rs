@@ -578,7 +578,7 @@ impl GraphClient {
         let body = serde_json::json!({
             "body": {
                 "contentType": "html",
-                "content": format!("<attachment id=\"{}\"></attachment>", attachment_id)
+                "content": format!("{} <attachment id=\"{}\"></attachment>", filename, attachment_id)
             },
             "attachments": [{
                 "id": attachment_id,
@@ -606,7 +606,7 @@ impl GraphClient {
         let body = serde_json::json!({
             "body": {
                 "contentType": "html",
-                "content": format!("<attachment id=\"{}\"></attachment>", attachment_id)
+                "content": format!("{} <attachment id=\"{}\"></attachment>", filename, attachment_id)
             },
             "attachments": [{
                 "id": attachment_id,

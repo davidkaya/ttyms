@@ -1086,6 +1086,21 @@ impl App {
             .unwrap_or(false)
     }
 
+    pub fn selected_message_attachment_url(&self) -> Option<String> {
+        let msgs = match self.view_mode {
+            ViewMode::Chats => &self.messages,
+            ViewMode::Teams => &self.channel_messages,
+        };
+        let idx = match self.view_mode {
+            ViewMode::Chats => self.selected_message?,
+            ViewMode::Teams => self.selected_channel_message?,
+        };
+        msgs.get(idx)?
+            .file_attachments()
+            .first()
+            .and_then(|a| a.content_url.clone())
+    }
+
     // ---- Pagination helpers ----
 
     pub fn prepend_older_messages(&mut self, older: Vec<Message>) {

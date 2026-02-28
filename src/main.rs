@@ -588,6 +588,11 @@ async fn handle_chats_keys(
                     app.start_edit();
                 }
             }
+            KeyCode::Enter => {
+                if let Some(url) = app.selected_message_attachment_url() {
+                    let _ = open::that(&url);
+                }
+            }
             KeyCode::Esc => {
                 if app.selected_message.is_some() {
                     app.selected_message = None;
@@ -731,7 +736,13 @@ async fn handle_teams_keys(
             }
             KeyCode::Char('m') => load_and_toggle_members(graph, app).await,
             KeyCode::Char('f') => app.open_file_picker(),
-            KeyCode::Enter => app.teams_panel = TeamsPanel::ChannelInput,
+            KeyCode::Enter => {
+                if let Some(url) = app.selected_message_attachment_url() {
+                    let _ = open::that(&url);
+                } else {
+                    app.teams_panel = TeamsPanel::ChannelInput;
+                }
+            }
             KeyCode::Esc => {
                 if app.selected_channel_message.is_some() {
                     app.selected_channel_message = None;

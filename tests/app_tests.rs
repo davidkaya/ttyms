@@ -603,25 +603,25 @@ mod message_selection_tests {
             Message {
                 id: "sys1".to_string(),
                 message_type: Some("systemEventMessage".to_string()),
-                body: None, from: None, created_date_time: None, reactions: None,
+                body: None, from: None, created_date_time: None, reactions: None, attachments: vec![],
             },
             Message {
                 id: "msg1".to_string(),
                 message_type: Some("message".to_string()),
                 body: Some(MessageBody { content: Some("First".to_string()), content_type: None }),
-                from: None, created_date_time: None, reactions: None,
+                from: None, created_date_time: None, reactions: None, attachments: vec![],
             },
             Message {
                 id: "msg2".to_string(),
                 message_type: Some("message".to_string()),
                 body: Some(MessageBody { content: Some("Second".to_string()), content_type: None }),
-                from: None, created_date_time: None, reactions: None,
+                from: None, created_date_time: None, reactions: None, attachments: vec![],
             },
             Message {
                 id: "msg3".to_string(),
                 message_type: Some("message".to_string()),
                 body: Some(MessageBody { content: Some("Third".to_string()), content_type: None }),
-                from: None, created_date_time: None, reactions: None,
+                from: None, created_date_time: None, reactions: None, attachments: vec![],
             },
         ]
     }
@@ -705,7 +705,7 @@ mod dialog_tests {
         app.messages = vec![ttyms::models::Message {
             id: "m1".to_string(),
             message_type: Some("message".to_string()),
-            body: None, from: None, created_date_time: None, reactions: None,
+            body: None, from: None, created_date_time: None, reactions: None, attachments: vec![],
         }];
         app.selected_message = Some(0);
         app.open_reaction_picker();
@@ -843,7 +843,7 @@ mod unread_tracking_tests {
         let mut app = App::new();
         app.messages = vec![Message {
             id: "m1".to_string(), message_type: None, body: None,
-            from: None, created_date_time: None, reactions: None,
+            from: None, created_date_time: None, reactions: None, attachments: vec![],
         }];
         assert!(!app.detect_new_messages()); // First time is init
     }
@@ -853,13 +853,13 @@ mod unread_tracking_tests {
         let mut app = App::new();
         app.messages = vec![Message {
             id: "m1".to_string(), message_type: None, body: None,
-            from: None, created_date_time: None, reactions: None,
+            from: None, created_date_time: None, reactions: None, attachments: vec![],
         }];
         app.detect_new_messages(); // Initialize
 
         app.messages.push(Message {
             id: "m2".to_string(), message_type: None, body: None,
-            from: None, created_date_time: None, reactions: None,
+            from: None, created_date_time: None, reactions: None, attachments: vec![],
         });
         assert!(app.detect_new_messages());
     }
@@ -869,7 +869,7 @@ mod unread_tracking_tests {
         let mut app = App::new();
         app.messages = vec![Message {
             id: "m1".to_string(), message_type: None, body: None,
-            from: None, created_date_time: None, reactions: None,
+            from: None, created_date_time: None, reactions: None, attachments: vec![],
         }];
         app.detect_new_messages();
         assert!(!app.detect_new_messages());
@@ -905,7 +905,7 @@ mod cache_tests {
             body: None,
             from: None,
             created_date_time: None,
-            reactions: None,
+            reactions: None, attachments: vec![],
         }
     }
 
@@ -1043,7 +1043,7 @@ mod reply_tests {
                     }),
                 }),
                 created_date_time: None,
-                reactions: None,
+                reactions: None, attachments: vec![],
             },
             Message {
                 id: "msg2".to_string(),
@@ -1056,7 +1056,7 @@ mod reply_tests {
                     }),
                 }),
                 created_date_time: None,
-                reactions: None,
+                reactions: None, attachments: vec![],
             },
         ]
     }
@@ -1121,7 +1121,7 @@ mod edit_tests {
                     }),
                 }),
                 created_date_time: None,
-                reactions: None,
+                reactions: None, attachments: vec![],
             },
             Message {
                 id: "msg2".to_string(),
@@ -1134,7 +1134,7 @@ mod edit_tests {
                     }),
                 }),
                 created_date_time: None,
-                reactions: None,
+                reactions: None, attachments: vec![],
             },
         ];
         app
@@ -1203,7 +1203,7 @@ mod pagination_tests {
             body: Some(MessageBody { content: Some(format!("Msg {}", id)), content_type: None }),
             from: None,
             created_date_time: None,
-            reactions: None,
+            reactions: None, attachments: vec![],
         }
     }
 
@@ -1337,7 +1337,7 @@ mod delta_sync_tests {
             }),
             from: None,
             created_date_time: Some(time.to_string()),
-            reactions: None,
+            reactions: None, attachments: vec![],
         }
     }
 

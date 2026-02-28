@@ -477,6 +477,23 @@ fn draw_messages(
             lines.push(Line::from(content_spans));
         }
 
+        // File attachments
+        for attachment in msg.file_attachments() {
+            let name = attachment.name.as_deref().unwrap_or("file");
+            let mut att_spans: Vec<Span> = vec![Span::raw("  ")];
+            att_spans.push(Span::styled(
+                format!("📎 {}", name),
+                Style::default().fg(Color::Green).add_modifier(Modifier::UNDERLINED),
+            ));
+            if attachment.content_url.is_some() {
+                att_spans.push(Span::styled(
+                    " (Enter to open)",
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            lines.push(Line::from(att_spans));
+        }
+
         // Reactions
         let reactions = msg.reactions_summary();
         if !reactions.is_empty() {

@@ -173,7 +173,7 @@ mod message_tests {
                 }),
             }),
             created_date_time: datetime.map(String::from),
-            reactions: None,
+            reactions: None, attachments: vec![],
         }
     }
 
@@ -203,7 +203,7 @@ mod message_tests {
             body: None,
             from: None,
             created_date_time: None,
-            reactions: None,
+            reactions: None, attachments: vec![],
         };
         assert_eq!(msg.content_text(), "");
     }
@@ -352,6 +352,7 @@ mod reaction_tests {
                     })
                     .collect(),
             ),
+            attachments: vec![],
         }
     }
 
@@ -379,7 +380,7 @@ mod reaction_tests {
             body: None,
             from: None,
             created_date_time: None,
-            reactions: None,
+            reactions: None, attachments: vec![],
         };
         assert!(msg.reactions_summary().is_empty());
     }
@@ -982,5 +983,53 @@ mod drive_item_tests {
         assert_eq!(item.name, "notes.txt");
         assert!(item.e_tag.is_none());
         assert!(item.size.is_none());
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use ttyms::models::Message;
+
+    #[test]
+    fn message_with_file_attachments() {
+        let json = r#"{
+            "id": "msg-1",
+            "body": { "content": "report.pdf <attachment id=\"abc\"></attachment>", "contentType": "html" },
+            "attachments": [
+                {
+                    "id": "abc",
+                    "contentType": "reference",
+                    "contentUrl": "https://example.com/report.pdf",
+                    "name": "report.pdf"
+                }
+            ]
+        }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        let files = msg.file_attachments();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name.as_deref(), Some("report.pdf"));
+        assert_eq!(files[0].content_url.as_deref(), Some("https://example.com/report.pdf"));
+    }
+
+    #[test]
+    fn message_without_attachments() {
+        let json = r#"{ "id": "msg-2", "body": { "content": "Hello" } }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        assert!(msg.file_attachments().is_empty());
+    }
+
+    #[test]
+    fn non_reference_attachments_are_excluded() {
+        let json = r#"{
+            "id": "msg-3",
+            "attachments": [
+                { "id": "x", "contentType": "application/vnd.microsoft.card.thumbnail", "name": "card" },
+                { "id": "y", "contentType": "reference", "contentUrl": "https://example.com/file.txt", "name": "file.txt" }
+            ]
+        }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        let files = msg.file_attachments();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name.as_deref(), Some("file.txt"));
     }
 }
