@@ -5,7 +5,7 @@ All notable changes to ttyms will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.5] - 2026-02-28
 
 ### Added
 
@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chat management** — manage chats via `g` key: tabbed dialog with member list (view/remove), rename group chats, and add members with user search; leave chat via `l` key
 - **Command palette** — `Ctrl+P` opens a fuzzy-find palette across all chats, team channels, and quick actions (New Chat, Search, Set Status, Settings, Quit); type to filter, arrow keys to navigate, Enter to execute
 - **File sharing** — upload and share files in chats and channels via `f` key; uploads to OneDrive and sends an attachment reference message (up to 4 MB)
+- **File attachment display** — messages with file attachments show 📎 indicator with filename; press Enter on a selected attachment to open in browser
 
 ## [0.1.4] - 2026-02-27
 
