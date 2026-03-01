@@ -7,7 +7,7 @@ mod ui;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -143,20 +143,20 @@ async fn main() -> Result<()> {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
         original_hook(panic);
     }));
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_app(&mut terminal, config, http_client, token).await;
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
 
     if let Err(ref e) = result {
         eprintln!("Error: {}", e);
@@ -210,7 +210,7 @@ async fn run_app(
     app.screen = AppScreen::Loading {
         message: "Loading your chats...".to_string(),
     };
-    terminal.draw(|f| ui::draw(f, &app))?;
+    terminal.draw(|f| ui::draw(f, &mut app))?;
 
     // Fetch user profile
     match graph.get_me().await {
@@ -219,7 +219,7 @@ async fn run_app(
             app.screen = AppScreen::Error {
                 message: format!("Failed to get user profile: {}", e),
             };
-            terminal.draw(|f| ui::draw(f, &app))?;
+            terminal.draw(|f| ui::draw(f, &mut app))?;
             wait_for_key();
             return Ok(());
         }
@@ -236,7 +236,7 @@ async fn run_app(
             app.screen = AppScreen::Error {
                 message: format!("Failed to load chats: {}", e),
             };
-            terminal.draw(|f| ui::draw(f, &app))?;
+            terminal.draw(|f| ui::draw(f, &mut app))?;
             wait_for_key();
             return Ok(());
         }
@@ -355,10 +355,11 @@ async fn run_app(
             }
         }
 
-        terminal.draw(|f| ui::draw(f, &app))?;
+        terminal.draw(|f| ui::draw(f, &mut app))?;
 
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
+            match event::read()? {
+                Event::Key(key) => {
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
@@ -480,6 +481,15 @@ async fn run_app(
                         handle_teams_keys(&mut app, &graph, &bg_tx, key.code).await;
                     }
                 }
+                }
+                Event::Mouse(mouse) => {
+                    // Ignore mouse when a dialog is open
+                    if app.dialog != DialogMode::None {
+                        continue;
+                    }
+                    handle_mouse_event(&mut app, &graph, &bg_tx, mouse).await;
+                }
+                _ => {}
             }
         }
 
@@ -780,6 +790,132 @@ async fn handle_teams_keys(
             KeyCode::Right => app.channel_move_cursor_right(),
             _ => {}
         },
+    }
+}
+
+// ---- Mouse handling ----
+
+fn rect_contains(rect: ratatui::layout::Rect, col: u16, row: u16) -> bool {
+    col >= rect.x && col < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+}
+
+async fn handle_mouse_event(
+    app: &mut app::App,
+    graph: &client::GraphClient,
+    _bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    mouse: crossterm::event::MouseEvent,
+) {
+    let col = mouse.column;
+    let row = mouse.row;
+    let areas = app.layout_areas.clone();
+
+    match mouse.kind {
+        MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+            match app.view_mode {
+                ViewMode::Chats => {
+                    if rect_contains(areas.chat_list, col, row) {
+                        app.active_panel = Panel::ChatList;
+                        // Each chat item is 3 lines; account for border (1px top)
+                        let inner_y = row.saturating_sub(areas.chat_list.y + 1);
+                        let item_height = 3u16;
+                        let clicked_offset = (inner_y / item_height) as usize;
+                        // Compute scroll_start same as draw_chat_list
+                        let inner_height = areas.chat_list.height.saturating_sub(2) as usize;
+                        let max_visible = if item_height > 0 { inner_height / item_height as usize } else { 0 };
+                        let scroll_start = if max_visible > 0 && app.selected_chat >= max_visible {
+                            app.selected_chat - max_visible + 1
+                        } else {
+                            0
+                        };
+                        let new_idx = scroll_start + clicked_offset;
+                        if new_idx < app.chats.len() && new_idx != app.selected_chat {
+                            app.selected_chat = new_idx;
+                            load_messages(graph, app).await;
+                        }
+                    } else if rect_contains(areas.messages, col, row) {
+                        app.active_panel = Panel::Messages;
+                    } else if rect_contains(areas.input, col, row) {
+                        app.active_panel = Panel::Input;
+                    }
+                }
+                ViewMode::Teams => {
+                    if rect_contains(areas.team_list, col, row) {
+                        app.teams_panel = TeamsPanel::TeamList;
+                        let inner_y = row.saturating_sub(areas.team_list.y + 1);
+                        let new_idx = inner_y as usize;
+                        if new_idx < app.teams.len() && new_idx != app.selected_team {
+                            app.selected_team = new_idx;
+                            app.show_cached_channels_for_selected_team();
+                        }
+                    } else if rect_contains(areas.channel_list, col, row) {
+                        app.teams_panel = TeamsPanel::ChannelList;
+                        let inner_y = row.saturating_sub(areas.channel_list.y + 1);
+                        let new_idx = inner_y as usize;
+                        if new_idx < app.channels.len() && new_idx != app.selected_channel {
+                            app.selected_channel = new_idx;
+                            app.show_cached_messages_for_selected_channel();
+                        }
+                    } else if rect_contains(areas.channel_messages, col, row) {
+                        app.teams_panel = TeamsPanel::ChannelMessages;
+                    } else if rect_contains(areas.channel_input, col, row) {
+                        app.teams_panel = TeamsPanel::ChannelInput;
+                    }
+                }
+            }
+        }
+        MouseEventKind::ScrollUp => {
+            match app.view_mode {
+                ViewMode::Chats if rect_contains(areas.chat_list, col, row) => {
+                    app.select_prev_chat();
+                    load_messages(graph, app).await;
+                }
+                ViewMode::Chats if rect_contains(areas.messages, col, row) => {
+                    app.scroll_messages_up();
+                    if app.scroll_offset > 0 && app.messages_next_link.is_some() && !app.loading_more_messages {
+                        load_older_messages(graph, app).await;
+                    }
+                }
+                ViewMode::Teams if rect_contains(areas.team_list, col, row) => {
+                    app.select_prev_team();
+                    app.show_cached_channels_for_selected_team();
+                }
+                ViewMode::Teams if rect_contains(areas.channel_list, col, row) => {
+                    app.select_prev_channel();
+                    app.show_cached_messages_for_selected_channel();
+                }
+                ViewMode::Teams if rect_contains(areas.channel_messages, col, row) => {
+                    app.channel_scroll_up();
+                    if app.channel_scroll_offset > 0 && app.channel_messages_next_link.is_some() && !app.loading_more_messages {
+                        load_older_channel_messages(graph, app).await;
+                    }
+                }
+                _ => {}
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            match app.view_mode {
+                ViewMode::Chats if rect_contains(areas.chat_list, col, row) => {
+                    app.select_next_chat();
+                    load_messages(graph, app).await;
+                }
+                ViewMode::Chats if rect_contains(areas.messages, col, row) => {
+                    app.scroll_messages_down();
+                }
+                ViewMode::Teams if rect_contains(areas.team_list, col, row) => {
+                    app.select_next_team();
+                    app.show_cached_channels_for_selected_team();
+                }
+                ViewMode::Teams if rect_contains(areas.channel_list, col, row) => {
+                    app.select_next_channel();
+                    app.show_cached_messages_for_selected_channel();
+                }
+                ViewMode::Teams if rect_contains(areas.channel_messages, col, row) => {
+                    app.channel_scroll_down();
+                }
+                _ => {}
+            }
+        }
+        _ => {}
     }
 }
 

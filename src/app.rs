@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use ratatui::layout::Rect;
+
 use crate::models::{Channel, ChannelMember, Chat, ChatMember, Message, SearchHit, Team, User};
 
 #[derive(Debug, Clone)]
@@ -87,6 +89,20 @@ pub struct ErrorInfo {
     pub title: String,
     pub message: String,
     pub details: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LayoutAreas {
+    // Chats view
+    pub chat_list: Rect,
+    pub messages: Rect,
+    pub input: Rect,
+    // Teams view
+    pub team_list: Rect,
+    pub channel_list: Rect,
+    pub channel_messages: Rect,
+    pub channel_input: Rect,
+    pub channel_members: Rect,
 }
 
 pub struct App {
@@ -211,6 +227,9 @@ pub struct App {
     pub file_path_cursor: usize,
     pub file_uploading: bool,
     pub file_upload_error: Option<String>,
+
+    // Layout areas for mouse hit-testing (updated each frame)
+    pub layout_areas: LayoutAreas,
 }
 
 impl App {
@@ -295,6 +314,7 @@ impl App {
             file_path_cursor: 0,
             file_uploading: false,
             file_upload_error: None,
+            layout_areas: LayoutAreas::default(),
         }
     }
 

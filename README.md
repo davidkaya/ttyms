@@ -30,6 +30,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 - **Secure by design** — tokens stored in OS credential manager, sensitive data zeroized in memory
 - **Auto-refresh** — messages update automatically every 15 seconds with terminal bell for new messages
 - **Vim-style navigation** — use `j`/`k` or arrow keys to navigate
+- **Mouse support** — click to select chats/teams/channels, scroll messages, focus panels
 
 ## Screenshots
 
@@ -186,6 +187,14 @@ cargo run -- --pkce
 | `m` | Toggle channel member list |
 | `f` | Share file (upload and send attachment) |
 | `Esc` | Go back one panel / deselect / cancel reply or edit |
+
+### Mouse Support
+
+| Action | Effect |
+|---|---|
+| Left click on panel | Focus that panel |
+| Left click on chat/team/channel | Select the clicked item |
+| Scroll wheel | Scroll messages or navigate lists |
 
 ### Global Shortcuts
 

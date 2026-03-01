@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mouse support** — click to select chats, teams, and channels; click to focus panels (messages, input); scroll wheel to scroll messages and navigate lists
 - **Delta-based message sync** — uses Microsoft Graph delta queries (`/messages/delta`) for incremental message updates instead of full re-fetching, reducing API calls and latency
 - **Message search** — full-text search across all chats via `/` key, powered by Microsoft Search API (`POST /search/query` with `chatMessage` entity type); shows sender, timestamp, and summary snippet; Enter on a result navigates to the chat
 - **Chat management** — manage chats via `g` key: tabbed dialog with member list (view/remove), rename group chats, and add members with user search; leave chat via `l` key

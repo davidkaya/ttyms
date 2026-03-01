@@ -36,6 +36,8 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Command palette** — `Ctrl+P` fuzzy-find across chats, channels, and actions
 - **Share files in chat** — upload and share files via `f` key (up to 4MB, OneDrive-backed)
 
+- **Mouse support** — click to select chats/teams/channels, scroll messages, focus panels
+
 ---
 
 ## 🔥 Phase 1 — Core Messaging Polish
@@ -156,9 +158,9 @@ User-configurable keybindings via `config.toml`.
 User-selectable color themes (dark, light, solarized, nord, etc.).
 - No API — ratatui styling via config
 
-### Mouse support
-Click to select chats, scroll messages, focus input.
-- No API — crossterm mouse event handling (already available in the dependency)
+### ~~Mouse support~~ ✅
+~~Click to select chats, scroll messages, focus input.~~
+- ~~No API — crossterm mouse event handling (already available in the dependency)~~
 
 ### ~~Command palette~~ ✅
 ~~`Ctrl+P` fuzzy-find across chats, channels, people, and actions.~~

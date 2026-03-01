@@ -6,10 +6,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, AppScreen, ChatManagerTab, DialogMode, Panel, TeamsPanel, ViewMode};
+use crate::app::{App, AppScreen, ChatManagerTab, DialogMode, LayoutAreas, Panel, TeamsPanel, ViewMode};
 use crate::models::{self, RichSegment};
 
-pub fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &mut App) {
     match &app.screen {
         AppScreen::Loading { message } => draw_loading(frame, message),
         AppScreen::Error { message } => draw_error(frame, message),
@@ -88,7 +88,7 @@ fn draw_error(frame: &mut Frame, message: &str) {
     frame.render_widget(hint, chunks[2]);
 }
 
-fn draw_main(frame: &mut Frame, app: &App) {
+fn draw_main(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -100,6 +100,9 @@ fn draw_main(frame: &mut Frame, app: &App) {
         .split(area);
 
     draw_header(frame, app, chunks[0]);
+
+    // Reset layout areas each frame
+    app.layout_areas = LayoutAreas::default();
 
     match app.view_mode {
         ViewMode::Chats => draw_chats_body(frame, app, chunks[1]),
@@ -184,12 +187,13 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
 
 // ---- Chats View ----
 
-fn draw_chats_body(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_chats_body(frame: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(area);
 
+    app.layout_areas.chat_list = chunks[0];
     draw_chat_list(frame, app, chunks[0]);
     draw_message_area(frame, app, chunks[1]);
 }
@@ -292,7 +296,7 @@ fn draw_chat_list(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(list, area);
 }
 
-fn draw_message_area(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_message_area(frame: &mut Frame, app: &mut App, area: Rect) {
     let reply_or_edit = app.is_replying() || app.is_editing();
     let constraints = if reply_or_edit {
         vec![Constraint::Min(5), Constraint::Length(1), Constraint::Length(3)]
@@ -303,6 +307,9 @@ fn draw_message_area(frame: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
+
+    app.layout_areas.messages = chunks[0];
+    app.layout_areas.input = chunks[2];
 
     draw_messages(frame, app, &app.messages, app.scroll_offset, app.selected_message,
                   &app.selected_chat_name(), app.active_panel == Panel::Messages,
@@ -562,7 +569,7 @@ fn draw_input_box(
 
 // ---- Teams View ----
 
-fn draw_teams_body(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_teams_body(frame: &mut Frame, app: &mut App, area: Rect) {
     let constraints = if app.show_members {
         vec![
             Constraint::Percentage(25),
@@ -580,16 +587,19 @@ fn draw_teams_body(frame: &mut Frame, app: &App, area: Rect) {
     draw_teams_sidebar(frame, app, chunks[0]);
     draw_channel_message_area(frame, app, chunks[1]);
     if app.show_members {
+        app.layout_areas.channel_members = chunks[2];
         draw_channel_members(frame, app, chunks[2]);
     }
 }
 
-fn draw_teams_sidebar(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_teams_sidebar(frame: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(area);
 
+    app.layout_areas.team_list = chunks[0];
+    app.layout_areas.channel_list = chunks[1];
     draw_team_list(frame, app, chunks[0]);
     draw_channel_list(frame, app, chunks[1]);
 }
@@ -717,7 +727,7 @@ fn draw_channel_members(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(list, area);
 }
 
-fn draw_channel_message_area(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_channel_message_area(frame: &mut Frame, app: &mut App, area: Rect) {
     let reply_or_edit = app.is_replying() || app.is_editing();
     let constraints = if reply_or_edit && app.view_mode == ViewMode::Teams {
         vec![Constraint::Min(5), Constraint::Length(1), Constraint::Length(3)]
@@ -728,6 +738,9 @@ fn draw_channel_message_area(frame: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
+
+    app.layout_areas.channel_messages = chunks[0];
+    app.layout_areas.channel_input = chunks[2];
 
     let title = app.selected_channel_name();
 
