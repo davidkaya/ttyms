@@ -37,7 +37,11 @@ pub fn load_config() -> Result<Config> {
 # Leave empty to use the built-in default: {}
 client_id = ""
 
-# Azure AD Tenant ID ("common" for multi-tenant, or your specific tenant ID)
+# Azure AD Tenant ID
+# "common" = work/school + personal accounts
+# "organizations" = work/school accounts only
+# "consumers" = personal Microsoft accounts only
+# Or use your specific tenant ID (GUID)
 tenant_id = "common"
 
 # Auto-refresh interval in seconds (minimum: 5)

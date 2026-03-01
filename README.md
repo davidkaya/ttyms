@@ -37,7 +37,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 
 ## Prerequisites
 
-- **Microsoft 365 account** with Teams access
+- **Microsoft 365 account** with Teams access (work or school account required — personal Microsoft accounts are not supported by the Teams Graph API)
 
 ## Installation
 
@@ -103,7 +103,7 @@ tenant_id = "common"
 2. Click **New registration**
 3. Set:
    - **Name**: `ttyms` (or any name)
-   - **Supported account types**: *Accounts in any organizational directory* (for multi-tenant)
+   - **Supported account types**: *Accounts in any organizational directory* (multi-tenant; personal Microsoft accounts are not supported by Teams Graph API)
    - **Redirect URI**: leave blank
 4. Click **Register**
 5. Go to **Authentication**:
