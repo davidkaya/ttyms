@@ -501,7 +501,30 @@ fn draw_messages(
                 ));
             }
             lines.push(Line::from(att_spans));
-            for preview_line in image_preview_card_lines(name) {
+
+            if let Some(url) = attachment.content_url.as_deref() {
+                if let Some(decoded) = app.image_preview_lines(url) {
+                    for preview_line in decoded {
+                        lines.push(Line::from(vec![
+                            Span::raw("  "),
+                            Span::styled(preview_line.clone(), Style::default().fg(Color::DarkGray)),
+                        ]));
+                    }
+                    continue;
+                }
+            }
+
+            let placeholder_lines = if let Some(url) = attachment.content_url.as_deref() {
+                if app.is_image_preview_pending(url) {
+                    image_preview_card_lines(name, "loading preview…")
+                } else {
+                    image_preview_card_lines(name, "preview unavailable")
+                }
+            } else {
+                image_preview_card_lines(name, "preview unavailable")
+            };
+
+            for preview_line in placeholder_lines {
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(preview_line, Style::default().fg(Color::DarkGray)),
@@ -552,16 +575,20 @@ fn draw_messages(
     frame.render_widget(paragraph, inner);
 }
 
-fn image_preview_card_lines(name: &str) -> Vec<String> {
+fn image_preview_card_lines(name: &str, status: &str) -> Vec<String> {
     const WIDTH: usize = 28;
     let mut truncated_name: String = name.chars().take(WIDTH - 4).collect();
     if name.chars().count() > WIDTH - 4 {
         truncated_name.push('…');
     }
+    let mut truncated_status: String = status.chars().take(WIDTH - 4).collect();
+    if status.chars().count() > WIDTH - 4 {
+        truncated_status.push('…');
+    }
 
     vec![
         format!("┌{}┐", "─".repeat(WIDTH)),
-        format!("│ {:<width$} │", "image preview", width = WIDTH - 2),
+        format!("│ {:<width$} │", truncated_status, width = WIDTH - 2),
         format!("│ {:<width$} │", truncated_name, width = WIDTH - 2),
         format!("└{}┘", "─".repeat(WIDTH)),
     ]

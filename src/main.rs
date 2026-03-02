@@ -12,7 +12,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::io;
+use std::{collections::HashSet, io};
 
 use app::{AppScreen, DialogMode, Panel, TeamsPanel, ViewMode};
 
@@ -99,6 +99,8 @@ enum BgResult {
     // File upload results
     FileUploaded(String),
     FileUploadError(String),
+    // Image preview results
+    ImagePreview(String, Vec<String>),
 }
 
 #[tokio::main]
@@ -352,8 +354,16 @@ async fn run_app(
                     app.file_uploading = false;
                     app.file_upload_error = Some(err);
                 }
+                BgResult::ImagePreview(url, lines) => {
+                    app.set_image_preview(url, lines);
+                }
             }
         }
+
+        let chat_preview_urls = collect_image_preview_urls(&app.messages);
+        queue_image_preview_fetches(&graph, &mut app, &bg_tx, chat_preview_urls);
+        let channel_preview_urls = collect_image_preview_urls(&app.channel_messages);
+        queue_image_preview_fetches(&graph, &mut app, &bg_tx, channel_preview_urls);
 
         terminal.draw(|f| ui::draw(f, &mut app))?;
 
@@ -508,6 +518,90 @@ async fn run_app(
     }
 
     Ok(())
+}
+
+fn collect_image_preview_urls(messages: &[models::Message]) -> Vec<String> {
+    let mut urls = HashSet::new();
+    for msg in messages {
+        for attachment in msg.image_attachments() {
+            if let Some(url) = attachment.content_url.as_ref() {
+                urls.insert(url.clone());
+            }
+        }
+    }
+    urls.into_iter().collect()
+}
+
+fn queue_image_preview_fetches(
+    graph: &client::GraphClient,
+    app: &mut app::App,
+    bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
+    urls: Vec<String>,
+) {
+    for url in urls {
+        if !app.mark_image_preview_pending(&url) {
+            continue;
+        }
+        let bg_graph = graph.clone_for_background();
+        let tx = bg_tx.clone();
+        tokio::spawn(async move {
+            let lines = match bg_graph.download_binary(&url).await {
+                Ok(bytes) => decode_image_preview_lines(&bytes),
+                Err(_) => vec!["(preview unavailable)".to_string()],
+            };
+            let _ = tx.send(BgResult::ImagePreview(url, lines));
+        });
+    }
+}
+
+fn decode_image_preview_lines(bytes: &[u8]) -> Vec<String> {
+    let decoded = match image::load_from_memory(bytes) {
+        Ok(img) => img.thumbnail(28, 16).to_luma8(),
+        Err(_) => return vec!["(preview unavailable)".to_string()],
+    };
+
+    let width = decoded.width() as usize;
+    let height = decoded.height() as usize;
+    if width == 0 || height == 0 {
+        return vec!["(preview unavailable)".to_string()];
+    }
+
+    let mut lines = Vec::new();
+    lines.push(format!("┌{}┐", "─".repeat(width)));
+    let mut y = 0usize;
+    while y < height {
+        let mut row = String::with_capacity(width);
+        for x in 0..width {
+            let top = decoded.get_pixel(x as u32, y as u32)[0];
+            let bottom = if y + 1 < height {
+                decoded.get_pixel(x as u32, (y + 1) as u32)[0]
+            } else {
+                top
+            };
+            row.push(luma_pair_to_block(top, bottom));
+        }
+        lines.push(format!("│{}│", row));
+        y += 2;
+    }
+    lines.push(format!("└{}┘", "─".repeat(width)));
+    lines
+}
+
+fn luma_pair_to_block(top: u8, bottom: u8) -> char {
+    if top.saturating_sub(bottom) > 70 {
+        return '▀';
+    }
+    if bottom.saturating_sub(top) > 70 {
+        return '▄';
+    }
+    let avg = ((top as u16 + bottom as u16) / 2) as u8;
+    match avg {
+        0..=40 => ' ',
+        41..=90 => '░',
+        91..=150 => '▒',
+        151..=210 => '▓',
+        _ => '█',
+    }
 }
 
 // ---- Chat view key handling ----

@@ -227,6 +227,8 @@ pub struct App {
     pub file_path_cursor: usize,
     pub file_uploading: bool,
     pub file_upload_error: Option<String>,
+    pub image_preview_cache: HashMap<String, Vec<String>>,
+    pub image_preview_pending: HashSet<String>,
 
     // Layout areas for mouse hit-testing (updated each frame)
     pub layout_areas: LayoutAreas,
@@ -314,6 +316,8 @@ impl App {
             file_path_cursor: 0,
             file_uploading: false,
             file_upload_error: None,
+            image_preview_cache: HashMap::new(),
+            image_preview_pending: HashSet::new(),
             layout_areas: LayoutAreas::default(),
         }
     }
@@ -1126,6 +1130,27 @@ impl App {
                     .first()
                     .and_then(|a| a.content_url.clone())
             })
+    }
+
+    pub fn mark_image_preview_pending(&mut self, url: &str) -> bool {
+        if self.image_preview_cache.contains_key(url) || self.image_preview_pending.contains(url) {
+            return false;
+        }
+        self.image_preview_pending.insert(url.to_string());
+        true
+    }
+
+    pub fn set_image_preview(&mut self, url: String, lines: Vec<String>) {
+        self.image_preview_pending.remove(&url);
+        self.image_preview_cache.insert(url, lines);
+    }
+
+    pub fn image_preview_lines(&self, url: &str) -> Option<&[String]> {
+        self.image_preview_cache.get(url).map(|lines| lines.as_slice())
+    }
+
+    pub fn is_image_preview_pending(&self, url: &str) -> bool {
+        self.image_preview_pending.contains(url)
     }
 
     // ---- Pagination helpers ----

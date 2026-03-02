@@ -46,6 +46,22 @@ impl GraphClient {
             .context("Failed to parse Graph API response")
     }
 
+    pub async fn download_binary(&self, url: &str) -> Result<Vec<u8>> {
+        let resp = self
+            .client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Graph API binary download error ({}): {}", status, body);
+        }
+        let bytes = resp.bytes().await.context("Failed to read binary response")?;
+        Ok(bytes.to_vec())
+    }
+
     async fn post_json<T: serde::de::DeserializeOwned>(
         &self,
         url: &str,

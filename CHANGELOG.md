@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Image attachment previews** — messages now render image attachments with inline thumbnail-style preview cards and Enter-to-open hints
+- **Image attachment previews** — messages now render image attachments with decoded grayscale block previews and Enter-to-open hints
 
 ### Changed
 

@@ -2049,3 +2049,31 @@ mod attachment_selection_tests {
         assert!(app.selected_message_attachment_url().is_none());
     }
 }
+
+#[cfg(test)]
+mod image_preview_cache_tests {
+    use ttyms::app::App;
+
+    #[test]
+    fn mark_preview_pending_only_once() {
+        let mut app = App::new();
+        assert!(app.mark_image_preview_pending("https://example.com/a.png"));
+        assert!(!app.mark_image_preview_pending("https://example.com/a.png"));
+        assert!(app.is_image_preview_pending("https://example.com/a.png"));
+    }
+
+    #[test]
+    fn set_preview_moves_url_from_pending_to_cache() {
+        let mut app = App::new();
+        app.mark_image_preview_pending("https://example.com/a.png");
+        app.set_image_preview(
+            "https://example.com/a.png".to_string(),
+            vec!["line1".to_string(), "line2".to_string()],
+        );
+        assert!(!app.is_image_preview_pending("https://example.com/a.png"));
+        let lines = app.image_preview_lines("https://example.com/a.png").unwrap();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "line1");
+        assert_eq!(lines[1], "line2");
+    }
+}
