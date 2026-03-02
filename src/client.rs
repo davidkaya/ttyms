@@ -3,6 +3,23 @@ use zeroize::Zeroize;
 
 use crate::models::*;
 
+fn looks_like_image_bytes(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) // PNG
+        || bytes.starts_with(&[0xFF, 0xD8, 0xFF]) // JPEG
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
+        || bytes.starts_with(b"BM") // BMP
+        || (bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP")
+}
+
+fn append_query_hint(url: &str, key: &str, value: &str) -> String {
+    if url.contains('?') {
+        format!("{url}&{key}={value}")
+    } else {
+        format!("{url}?{key}={value}")
+    }
+}
+
 pub struct GraphClient {
     client: reqwest::Client,
     access_token: String,
@@ -47,19 +64,52 @@ impl GraphClient {
     }
 
     pub async fn download_binary(&self, url: &str) -> Result<Vec<u8>> {
-        let resp = self
-            .client
-            .get(url)
-            .header("Authorization", format!("Bearer {}", self.access_token))
-            .send()
-            .await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Graph API binary download error ({}): {}", status, body);
+        let mut candidate_urls = vec![url.to_string()];
+        for hinted in [
+            append_query_hint(url, "download", "1"),
+            append_query_hint(url, "raw", "1"),
+        ] {
+            if !candidate_urls.contains(&hinted) {
+                candidate_urls.push(hinted);
+            }
         }
-        let bytes = resp.bytes().await.context("Failed to read binary response")?;
-        Ok(bytes.to_vec())
+
+        let mut last_error = String::new();
+        for candidate in candidate_urls {
+            let resp = self
+                .client
+                .get(&candidate)
+                .header("Authorization", format!("Bearer {}", self.access_token))
+                .header("Accept", "image/*,*/*;q=0.8")
+                .send()
+                .await;
+            let resp = match resp {
+                Ok(r) => r,
+                Err(e) => {
+                    last_error = format!("request failed for {candidate}: {e}");
+                    continue;
+                }
+            };
+            let status = resp.status();
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                last_error = format!("status {} for {}: {}", status, candidate, body);
+                continue;
+            }
+            let bytes = match resp.bytes().await {
+                Ok(b) => b.to_vec(),
+                Err(e) => {
+                    last_error = format!("read failed for {candidate}: {e}");
+                    continue;
+                }
+            };
+            if looks_like_image_bytes(&bytes) {
+                return Ok(bytes);
+            }
+            last_error = format!("non-image response for {candidate}");
+        }
+
+        anyhow::bail!("Image download failed: {}", last_error);
     }
 
     async fn post_json<T: serde::de::DeserializeOwned>(
@@ -690,5 +740,34 @@ impl GraphClient {
 impl Drop for GraphClient {
     fn drop(&mut self) {
         self.access_token.zeroize();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{append_query_hint, looks_like_image_bytes};
+
+    #[test]
+    fn detects_png_signature() {
+        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 1];
+        assert!(looks_like_image_bytes(&png));
+    }
+
+    #[test]
+    fn rejects_html_signature() {
+        let html = b"<html><body>not image</body></html>";
+        assert!(!looks_like_image_bytes(html));
+    }
+
+    #[test]
+    fn appends_query_hint_correctly() {
+        assert_eq!(
+            append_query_hint("https://example.com/file.png", "download", "1"),
+            "https://example.com/file.png?download=1"
+        );
+        assert_eq!(
+            append_query_hint("https://example.com/file.png?x=1", "download", "1"),
+            "https://example.com/file.png?x=1&download=1"
+        );
     }
 }

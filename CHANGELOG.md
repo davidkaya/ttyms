@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Attachment opening now prioritizes image previews when a selected message contains both image and non-image attachments
 
+### Fixed
+
+- Image previews now retry SharePoint-style attachment URLs with download/raw query hints and image-byte sniffing to avoid false "preview unavailable" results for PNG files
+
 ## [0.1.5] - 2026-02-28
 
 ### Added
