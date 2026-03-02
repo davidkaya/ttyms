@@ -108,6 +108,41 @@ pub struct ChatMessageAttachment {
     pub name: Option<String>,
 }
 
+impl ChatMessageAttachment {
+    pub fn is_image(&self) -> bool {
+        if self
+            .content_type
+            .as_deref()
+            .map(|ct| ct.to_ascii_lowercase().starts_with("image/"))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+
+        if self.content_type.as_deref() != Some("reference") {
+            return false;
+        }
+
+        self.name
+            .as_deref()
+            .map(has_image_extension)
+            .unwrap_or(false)
+            || self
+                .content_url
+                .as_deref()
+                .map(has_image_extension)
+                .unwrap_or(false)
+    }
+}
+
+fn has_image_extension(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let path = lower.split('?').next().unwrap_or(&lower);
+    [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".tiff"]
+        .iter()
+        .any(|ext| path.ends_with(ext))
+}
+
 // Reaction types
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
@@ -272,7 +307,14 @@ impl Message {
     pub fn file_attachments(&self) -> Vec<&ChatMessageAttachment> {
         self.attachments
             .iter()
-            .filter(|a| a.content_type.as_deref() == Some("reference"))
+            .filter(|a| a.content_type.as_deref() == Some("reference") && !a.is_image())
+            .collect()
+    }
+
+    pub fn image_attachments(&self) -> Vec<&ChatMessageAttachment> {
+        self.attachments
+            .iter()
+            .filter(|a| a.is_image())
             .collect()
     }
 }

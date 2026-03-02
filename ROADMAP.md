@@ -35,6 +35,7 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Chat management** — rename group chats, view/add/remove members, leave chats via `g` key
 - **Command palette** — `Ctrl+P` fuzzy-find across chats, channels, and actions
 - **Share files in chat** — upload and share files via `f` key (up to 4MB, OneDrive-backed)
+- **Image previews** — inline unicode-block previews for image attachments with Enter-to-open support
 
 - **Mouse support** — click to select chats/teams/channels, scroll messages, focus panels
 
@@ -93,9 +94,9 @@ List files shared in a chat and open them (launch in browser or download).
 - Parse `attachment` objects from messages
 - `GET /drives/{id}/items/{id}` — download URL
 
-### Image previews
-Render inline images in the terminal using unicode block characters or sixel protocol (for supported terminals).
-- `GET /me/chats/{id}/messages/{id}/hostedContents/{id}` — fetch hosted image content
+### ~~Image previews~~ ✅
+~~Render inline image previews in the terminal using unicode block characters.~~
+- ~~Image attachments now render with inline unicode-block preview strips and Enter-to-open support~~
 
 ---
 

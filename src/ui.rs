@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -484,6 +486,34 @@ fn draw_messages(
             lines.push(Line::from(content_spans));
         }
 
+        // Image attachments
+        for attachment in msg.image_attachments() {
+            let name = attachment.name.as_deref().unwrap_or("image");
+            let seed = attachment
+                .content_url
+                .as_deref()
+                .or(attachment.name.as_deref())
+                .unwrap_or("image");
+            let mut att_spans: Vec<Span> = vec![Span::raw("  ")];
+            att_spans.push(Span::styled(
+                format!("🖼 {}", name),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::UNDERLINED),
+            ));
+            if attachment.content_url.is_some() {
+                att_spans.push(Span::styled(
+                    " (Enter to preview)",
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            lines.push(Line::from(att_spans));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(image_preview_strip(seed), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
         // File attachments
         for attachment in msg.file_attachments() {
             let name = attachment.name.as_deref().unwrap_or("file");
@@ -525,6 +555,20 @@ fn draw_messages(
 
     let paragraph = Paragraph::new(Text::from(lines)).scroll((scroll as u16, 0));
     frame.render_widget(paragraph, inner);
+}
+
+fn image_preview_strip(seed: &str) -> String {
+    let shades = ["░", "▒", "▓", "█"];
+    let mut hasher = DefaultHasher::new();
+    seed.hash(&mut hasher);
+    let mut value = hasher.finish();
+    let mut preview = String::new();
+    for _ in 0..16 {
+        let idx = (value & 0b11) as usize;
+        preview.push_str(shades[idx]);
+        value = value.rotate_right(3) ^ 0x9E37_79B9_7F4A_7C15;
+    }
+    preview
 }
 
 fn draw_input_box(
@@ -856,6 +900,9 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     if app.selected_message.is_some() {
                         add_shortcut("r", "Reply", &mut spans);
                         add_shortcut("e", "React", &mut spans);
+                        if app.selected_message_attachment_url().is_some() {
+                            add_shortcut("Enter", "Open Preview", &mut spans);
+                        }
                         if app.is_own_selected_message() {
                             add_shortcut("w", "Edit", &mut spans);
                             add_shortcut("d", "Delete", &mut spans);
@@ -900,7 +947,13 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     }
                     add_shortcut("m", "Members", &mut spans);
                     add_shortcut("f", "Share File", &mut spans);
-                    add_shortcut("Enter", "Write Message", &mut spans);
+                    if app.selected_channel_message.is_some()
+                        && app.selected_message_attachment_url().is_some()
+                    {
+                        add_shortcut("Enter", "Open Preview", &mut spans);
+                    } else {
+                        add_shortcut("Enter", "Write Message", &mut spans);
+                    }
                     add_shortcut("Esc", "Back", &mut spans);
                 }
                 TeamsPanel::ChannelInput => {

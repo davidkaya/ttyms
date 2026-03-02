@@ -25,6 +25,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 - **Message search** — full-text search across all chats via `/` key
 - **Chat management** — rename group chats, add/remove members, leave chats
 - **File sharing** — upload and share files (up to 4 MB) in chats and channels via `f` key
+- **Image previews** — image attachments show inline unicode-block previews with Enter-to-open
 - **Settings dialog** — configurable refresh interval via in-app settings
 - **Delta-based sync** — incremental message updates for efficient polling
 - **Secure by design** — tokens stored in OS credential manager, sensitive data zeroized in memory
@@ -155,7 +156,7 @@ cargo run -- --pkce
 |---|---|
 | `Tab` / `Shift+Tab` | Switch between panels (Chats → Messages → Input) |
 | `↑`/`↓` or `j`/`k` | Navigate chats / scroll messages / select messages |
-| `Enter` | Send message / jump to input |
+| `Enter` | Send message / jump to input / open selected attachment preview |
 | `n` | New chat |
 | `s` | Toggle message selection (in Messages panel) |
 | `r` | Reply to selected message / Refresh (when no selection) |
@@ -178,7 +179,7 @@ cargo run -- --pkce
 |---|---|
 | `Tab` / `Shift+Tab` | Switch panels (Teams → Channels → Messages → Input) |
 | `↑`/`↓` or `j`/`k` | Navigate teams / channels / scroll messages |
-| `Enter` | Expand team / select channel / send message |
+| `Enter` | Expand team / select channel / send message / open selected attachment preview |
 | `s` | Toggle message selection (in Channel Messages panel) |
 | `r` | Reply to selected message / Refresh (when no selection) |
 | `e` | React to selected message |

@@ -1971,3 +1971,81 @@ mod file_picker_tests {
         assert_eq!(app.file_upload_error.as_deref(), Some("File not found"));
     }
 }
+
+#[cfg(test)]
+mod attachment_selection_tests {
+    use ttyms::app::{App, ViewMode};
+    use ttyms::models::{ChatMessageAttachment, Message};
+
+    fn make_attachment(name: &str, content_type: &str, url: &str) -> ChatMessageAttachment {
+        ChatMessageAttachment {
+            id: Some(format!("att-{name}")),
+            content_type: Some(content_type.to_string()),
+            content_url: Some(url.to_string()),
+            name: Some(name.to_string()),
+        }
+    }
+
+    fn make_message(attachments: Vec<ChatMessageAttachment>) -> Message {
+        Message {
+            id: "msg-1".to_string(),
+            message_type: Some("message".to_string()),
+            body: None,
+            from: None,
+            created_date_time: None,
+            reactions: None,
+            attachments,
+        }
+    }
+
+    #[test]
+    fn selected_message_attachment_prefers_image_preview_url() {
+        let mut app = App::new();
+        app.messages = vec![make_message(vec![
+            make_attachment("file.pdf", "reference", "https://example.com/file.pdf"),
+            make_attachment("pic.png", "image/png", "https://example.com/pic.png"),
+        ])];
+        app.selected_message = Some(0);
+        assert_eq!(
+            app.selected_message_attachment_url().as_deref(),
+            Some("https://example.com/pic.png")
+        );
+    }
+
+    #[test]
+    fn selected_message_attachment_uses_file_url_when_no_image() {
+        let mut app = App::new();
+        app.messages = vec![make_message(vec![make_attachment(
+            "file.pdf",
+            "reference",
+            "https://example.com/file.pdf",
+        )])];
+        app.selected_message = Some(0);
+        assert_eq!(
+            app.selected_message_attachment_url().as_deref(),
+            Some("https://example.com/file.pdf")
+        );
+    }
+
+    #[test]
+    fn selected_channel_message_attachment_url_in_teams_view() {
+        let mut app = App::new();
+        app.view_mode = ViewMode::Teams;
+        app.channel_messages = vec![make_message(vec![make_attachment(
+            "image.jpg",
+            "reference",
+            "https://example.com/image.jpg",
+        )])];
+        app.selected_channel_message = Some(0);
+        assert_eq!(
+            app.selected_message_attachment_url().as_deref(),
+            Some("https://example.com/image.jpg")
+        );
+    }
+
+    #[test]
+    fn selected_message_attachment_none_when_no_selection() {
+        let app = App::new();
+        assert!(app.selected_message_attachment_url().is_none());
+    }
+}

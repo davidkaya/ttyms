@@ -1032,4 +1032,36 @@ mod attachment_tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].name.as_deref(), Some("file.txt"));
     }
+
+    #[test]
+    fn image_attachments_include_image_content_type() {
+        let json = r#"{
+            "id": "msg-4",
+            "attachments": [
+                { "id": "img1", "contentType": "image/png", "contentUrl": "https://example.com/pic.png", "name": "pic.png" }
+            ]
+        }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        let images = msg.image_attachments();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].name.as_deref(), Some("pic.png"));
+    }
+
+    #[test]
+    fn reference_image_attachments_not_listed_as_files() {
+        let json = r#"{
+            "id": "msg-5",
+            "attachments": [
+                { "id": "img2", "contentType": "reference", "contentUrl": "https://example.com/photo.jpeg", "name": "photo.jpeg" },
+                { "id": "doc1", "contentType": "reference", "contentUrl": "https://example.com/spec.pdf", "name": "spec.pdf" }
+            ]
+        }"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        let images = msg.image_attachments();
+        let files = msg.file_attachments();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].name.as_deref(), Some("photo.jpeg"));
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name.as_deref(), Some("spec.pdf"));
+    }
 }

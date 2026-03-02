@@ -1115,10 +1115,17 @@ impl App {
             ViewMode::Chats => self.selected_message?,
             ViewMode::Teams => self.selected_channel_message?,
         };
-        msgs.get(idx)?
-            .file_attachments()
+        let message = msgs.get(idx)?;
+        message
+            .image_attachments()
             .first()
             .and_then(|a| a.content_url.clone())
+            .or_else(|| {
+                message
+                    .file_attachments()
+                    .first()
+                    .and_then(|a| a.content_url.clone())
+            })
     }
 
     // ---- Pagination helpers ----
