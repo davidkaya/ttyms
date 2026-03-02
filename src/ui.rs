@@ -1,5 +1,3 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -489,11 +487,6 @@ fn draw_messages(
         // Image attachments
         for attachment in msg.image_attachments() {
             let name = attachment.name.as_deref().unwrap_or("image");
-            let seed = attachment
-                .content_url
-                .as_deref()
-                .or(attachment.name.as_deref())
-                .unwrap_or("image");
             let mut att_spans: Vec<Span> = vec![Span::raw("  ")];
             att_spans.push(Span::styled(
                 format!("🖼 {}", name),
@@ -508,10 +501,12 @@ fn draw_messages(
                 ));
             }
             lines.push(Line::from(att_spans));
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(image_preview_strip(seed), Style::default().fg(Color::DarkGray)),
-            ]));
+            for preview_line in image_preview_card_lines(name) {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(preview_line, Style::default().fg(Color::DarkGray)),
+                ]));
+            }
         }
 
         // File attachments
@@ -557,18 +552,19 @@ fn draw_messages(
     frame.render_widget(paragraph, inner);
 }
 
-fn image_preview_strip(seed: &str) -> String {
-    let shades = ["░", "▒", "▓", "█"];
-    let mut hasher = DefaultHasher::new();
-    seed.hash(&mut hasher);
-    let mut value = hasher.finish();
-    let mut preview = String::new();
-    for _ in 0..16 {
-        let idx = (value & 0b11) as usize;
-        preview.push_str(shades[idx]);
-        value = value.rotate_right(3) ^ 0x9E37_79B9_7F4A_7C15;
+fn image_preview_card_lines(name: &str) -> Vec<String> {
+    const WIDTH: usize = 28;
+    let mut truncated_name: String = name.chars().take(WIDTH - 4).collect();
+    if name.chars().count() > WIDTH - 4 {
+        truncated_name.push('…');
     }
-    preview
+
+    vec![
+        format!("┌{}┐", "─".repeat(WIDTH)),
+        format!("│ {:<width$} │", "image preview", width = WIDTH - 2),
+        format!("│ {:<width$} │", truncated_name, width = WIDTH - 2),
+        format!("└{}┘", "─".repeat(WIDTH)),
+    ]
 }
 
 fn draw_input_box(
