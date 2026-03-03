@@ -233,7 +233,7 @@ ttyms --client-id <ID>    # Override client_id from config
 
 ## Troubleshooting Logs
 
-ttyms writes troubleshooting logs to a per-user file and only logs predefined event labels (no message text, user identifiers, tokens, or other PII).
+ttyms writes troubleshooting logs to a per-user file and only logs predefined event labels (no message text, user identifiers, tokens, URLs, or other PII). Coverage includes startup/auth, Graph request outcomes, async refresh/presence flows, file sharing, and image preview queue/download/decode stages.
 
 - **Windows**: `%LOCALAPPDATA%\ttyms\logs\ttyms.log`
 - **macOS**: `~/Library/Logs/ttyms/ttyms.log`

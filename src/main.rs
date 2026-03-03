@@ -17,10 +17,12 @@ use std::{collections::HashSet, io};
 
 use app::{AppScreen, DialogMode, Panel, TeamsPanel, ViewMode};
 
-fn warn_on_log_failure(result: Result<()>) {
-    if let Err(e) = result {
-        eprintln!("Warning: logging failed: {}", e);
-    }
+fn log_event(event: &str) {
+    logging::try_log_event(event);
+}
+
+fn log_failure(operation: &str) {
+    logging::try_log_failure(operation);
 }
 
 /// Simple base64 encoder for OSC 52 clipboard (no external dep needed)
@@ -122,12 +124,12 @@ async fn main() -> Result<()> {
     if let Err(e) = logging::init_logging() {
         eprintln!("Warning: log initialization failed: {}", e);
     } else {
-        warn_on_log_failure(logging::log_event("app.start"));
+        log_event("app.start");
     }
 
     if args.iter().any(|a| a == "--logout") {
         auth::clear_stored_tokens()?;
-        warn_on_log_failure(logging::log_event("auth.logout"));
+        log_event("auth.logout");
         println!("Credentials cleared securely from OS credential store.");
         return Ok(());
     }
@@ -135,7 +137,7 @@ async fn main() -> Result<()> {
     let mut config = match config::load_config() {
         Ok(c) => c,
         Err(e) => {
-            warn_on_log_failure(logging::log_failure("config.load"));
+            log_failure("config.load");
             eprintln!("Error: {}\n", e);
             config::print_setup_guide();
             return Ok(());
@@ -147,7 +149,7 @@ async fn main() -> Result<()> {
         if let Some(id) = args.get(pos + 1) {
             config.client_id = id.clone();
         } else {
-            warn_on_log_failure(logging::log_failure("cli.client_id_missing"));
+            log_failure("cli.client_id_missing");
             eprintln!("Error: --client-id requires a value");
             return Ok(());
         }
@@ -155,15 +157,15 @@ async fn main() -> Result<()> {
 
     let http_client = reqwest::Client::new();
     let use_pkce = args.iter().any(|a| a == "--pkce");
-    warn_on_log_failure(logging::log_event(if use_pkce {
+    log_event(if use_pkce {
         "auth.flow.pkce"
     } else {
         "auth.flow.device_code"
-    }));
+    });
     let token = match authenticate(&http_client, &config, use_pkce).await {
         Ok(token) => token,
         Err(e) => {
-            warn_on_log_failure(logging::log_failure("auth.authenticate"));
+            log_failure("auth.authenticate");
             return Err(e);
         }
     };
@@ -189,10 +191,10 @@ async fn main() -> Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
 
     if let Err(ref e) = result {
-        warn_on_log_failure(logging::log_failure("app.run"));
+        log_failure("app.run");
         eprintln!("Error: {}", e);
     } else {
-        warn_on_log_failure(logging::log_event("app.exit"));
+        log_event("app.exit");
     }
 
     result
@@ -204,19 +206,19 @@ async fn authenticate(
     use_pkce: bool,
 ) -> Result<auth::TokenResponse> {
     if let Some(token) = auth::get_valid_token(client, config).await? {
-        warn_on_log_failure(logging::log_event("auth.cached_token"));
+        log_event("auth.cached_token");
         return Ok(token);
     }
 
     if use_pkce {
-        warn_on_log_failure(logging::log_event("auth.pkce.start"));
+        log_event("auth.pkce.start");
         println!("\n  Opening browser for sign-in (PKCE flow)...");
         let token = auth::authenticate_browser(client, config).await?;
-        warn_on_log_failure(logging::log_event("auth.pkce.success"));
+        log_event("auth.pkce.success");
         println!("  Authenticated! Tokens stored securely.\n");
         Ok(token)
     } else {
-        warn_on_log_failure(logging::log_event("auth.device_code.start"));
+        log_event("auth.device_code.start");
         println!("\n  Authentication required\n");
         let dc = auth::request_device_code(client, config).await?;
         println!("  {}\n", dc.message);
@@ -225,7 +227,7 @@ async fn authenticate(
         }
         println!("  Waiting for sign-in...");
         let token = auth::poll_for_token(client, config, &dc.device_code, dc.interval).await?;
-        warn_on_log_failure(logging::log_event("auth.device_code.success"));
+        log_event("auth.device_code.success");
         println!("  Authenticated! Tokens stored securely.\n");
         Ok(token)
     }
@@ -237,6 +239,7 @@ async fn run_app(
     http_client: reqwest::Client,
     token: auth::TokenResponse,
 ) -> Result<()> {
+    log_event("app.run.start");
     let mut app = app::App::new();
     app.refresh_interval = std::time::Duration::from_secs(config.refresh_interval_secs.max(5));
     let mut graph = client::GraphClient::new(token.access_token.clone());
@@ -251,9 +254,14 @@ async fn run_app(
     terminal.draw(|f| ui::draw(f, &mut app))?;
 
     // Fetch user profile
+    log_event("startup.profile.fetch");
     match graph.get_me().await {
-        Ok(user) => app.current_user = Some(user),
+        Ok(user) => {
+            app.current_user = Some(user);
+            log_event("startup.profile.success");
+        }
         Err(e) => {
+            log_failure("startup.profile.fetch");
             app.screen = AppScreen::Error {
                 message: format!("Failed to get user profile: {}", e),
             };
@@ -264,13 +272,16 @@ async fn run_app(
     }
 
     // Fetch chat list
+    log_event("startup.chats.fetch");
     match graph.list_chats().await {
         Ok(chats) => {
             app.chats = chats;
             app.update_total_unread();
             app.screen = AppScreen::Main;
+            log_event("startup.chats.success");
         }
         Err(e) => {
+            log_failure("startup.chats.fetch");
             app.screen = AppScreen::Error {
                 message: format!("Failed to load chats: {}", e),
             };
@@ -286,6 +297,9 @@ async fn run_app(
             app.messages = messages;
             app.messages_next_link = next_link;
             app.detect_new_messages(); // Initialize tracking
+            log_event("startup.messages.seeded");
+        } else {
+            log_failure("startup.messages.seed");
         }
     }
 
@@ -300,6 +314,7 @@ async fn run_app(
         while let Ok(result) = bg_rx.try_recv() {
             match result {
                 BgResult::Channels(team_id, channels) => {
+                    log_event("bg.channels.loaded");
                     // Cache and update display if this team is still selected
                     app.channels_cache.insert(team_id.clone(), channels.clone());
                     if app.selected_team_id() == Some(team_id.as_str()) {
@@ -310,6 +325,7 @@ async fn run_app(
                     }
                 }
                 BgResult::ChannelMessages(channel_id, messages) => {
+                    log_event("bg.channel_messages.loaded");
                     app.channel_message_cache.insert(channel_id.clone(), messages.clone());
                     if app.selected_channel_id() == Some(channel_id.as_str())
                         && app.view_mode == ViewMode::Teams
@@ -318,19 +334,24 @@ async fn run_app(
                     }
                 }
                 BgResult::PresenceMap(map) => {
+                    log_event("bg.presence_map.loaded");
                     app.presence_map.extend(map);
                 }
                 BgResult::MyPresence(avail) => {
+                    log_event("bg.my_presence.loaded");
                     app.my_presence = avail;
                 }
                 BgResult::TokenRefreshed(token) => {
+                    log_event("bg.token.refreshed");
                     graph.set_token(token);
                 }
                 BgResult::RefreshedChats(chats) => {
+                    log_event("bg.refresh.chats");
                     app.chats = chats;
                     app.update_total_unread();
                 }
                 BgResult::RefreshedChatMessages(messages, next_link) => {
+                    log_event("bg.refresh.chat_messages");
                     app.messages = messages;
                     app.messages_next_link = next_link;
                     if app.detect_new_messages() {
@@ -338,11 +359,13 @@ async fn run_app(
                     }
                 }
                 BgResult::RefreshedChannelMessages(channel_id, msgs, next_link) => {
+                    log_event("bg.refresh.channel_messages");
                     app.channel_messages = msgs.clone();
                     app.channel_messages_next_link = next_link;
                     app.channel_message_cache.insert(channel_id, msgs);
                 }
                 BgResult::DeltaChatMessages(chat_id, delta_msgs, delta_link) => {
+                    log_event("bg.delta.chat_messages");
                     if app.selected_chat_id() == Some(chat_id.as_str()) {
                         if let Some(link) = delta_link {
                             app.chat_delta_links.insert(chat_id, link);
@@ -353,11 +376,13 @@ async fn run_app(
                     }
                 }
                 BgResult::SearchResults(hits) => {
+                    log_event("search.results.ready");
                     app.search_loading = false;
                     app.search_results = hits;
                     app.selected_search_result = 0;
                 }
                 BgResult::SearchError(err) => {
+                    log_failure("search.background");
                     app.search_loading = false;
                     app.search_results.clear();
                     app.show_error(
@@ -367,14 +392,17 @@ async fn run_app(
                     );
                 }
                 BgResult::ChatMembers(members) => {
+                    log_event("chat_manager.members.ready");
                     app.chat_manager_loading = false;
                     app.chat_manager_members = members;
                     app.chat_manager_selected_member = 0;
                 }
                 BgResult::ChatManagerAction(msg) => {
+                    log_event("chat_manager.action");
                     app.status_message = msg;
                 }
                 BgResult::ChatManagerError(err) => {
+                    log_failure("chat_manager.background");
                     app.show_error(
                         "Chat Management Failed",
                         "An error occurred while managing the chat.",
@@ -382,15 +410,18 @@ async fn run_app(
                     );
                 }
                 BgResult::FileUploaded(msg) => {
+                    log_event("file_share.success");
                     app.file_uploading = false;
                     app.close_dialog();
                     app.status_message = msg;
                 }
                 BgResult::FileUploadError(err) => {
+                    log_failure("file_share.background");
                     app.file_uploading = false;
                     app.file_upload_error = Some(err);
                 }
                 BgResult::ImagePreview(url, lines) => {
+                    log_event("image_preview.result.ready");
                     app.set_image_preview(url, lines);
                 }
             }
@@ -578,28 +609,61 @@ fn queue_image_preview_fetches(
         if !app.mark_image_preview_pending(&url) {
             continue;
         }
+        log_event("image_preview.fetch.queued");
         let bg_graph = graph.clone_for_background();
         let tx = bg_tx.clone();
         tokio::spawn(async move {
-            let lines = match bg_graph.download_binary(&url).await {
-                Ok(bytes) => decode_image_preview_lines(&bytes),
-                Err(_) => vec!["(preview unavailable)".to_string()],
+            log_event("image_preview.fetch.start");
+            let lines = match bg_graph.download_binary_with_reason(&url).await {
+                Ok(bytes) => {
+                    log_event("image_preview.download.success");
+                    match decode_image_preview_lines(&bytes) {
+                        Ok(lines) => {
+                            log_event("image_preview.decode.success");
+                            lines
+                        }
+                        Err(kind) => {
+                            log_failure(kind.as_label());
+                            vec!["(preview unavailable)".to_string()]
+                        }
+                    }
+                }
+                Err(kind) => {
+                    log_failure(kind.as_label());
+                    vec!["(preview unavailable)".to_string()]
+                }
             };
-            let _ = tx.send(BgResult::ImagePreview(url, lines));
+            if tx.send(BgResult::ImagePreview(url, lines)).is_err() {
+                log_failure("image_preview.result.dispatch");
+            }
         });
     }
 }
 
-fn decode_image_preview_lines(bytes: &[u8]) -> Vec<String> {
+enum PreviewDecodeFailure {
+    InvalidBytes,
+    EmptyDimensions,
+}
+
+impl PreviewDecodeFailure {
+    fn as_label(&self) -> &'static str {
+        match self {
+            PreviewDecodeFailure::InvalidBytes => "image_preview.decode.invalid_bytes",
+            PreviewDecodeFailure::EmptyDimensions => "image_preview.decode.empty_dimensions",
+        }
+    }
+}
+
+fn decode_image_preview_lines(bytes: &[u8]) -> std::result::Result<Vec<String>, PreviewDecodeFailure> {
     let decoded = match image::load_from_memory(bytes) {
         Ok(img) => img.thumbnail(28, 16).to_luma8(),
-        Err(_) => return vec!["(preview unavailable)".to_string()],
+        Err(_) => return Err(PreviewDecodeFailure::InvalidBytes),
     };
 
     let width = decoded.width() as usize;
     let height = decoded.height() as usize;
     if width == 0 || height == 0 {
-        return vec!["(preview unavailable)".to_string()];
+        return Err(PreviewDecodeFailure::EmptyDimensions);
     }
 
     let mut lines = Vec::new();
@@ -620,7 +684,7 @@ fn decode_image_preview_lines(bytes: &[u8]) -> Vec<String> {
         y += 2;
     }
     lines.push(format!("└{}┘", "─".repeat(width)));
-    lines
+    Ok(lines)
 }
 
 fn luma_pair_to_block(top: u8, bottom: u8) -> char {
@@ -1366,12 +1430,15 @@ async fn handle_search_keys(
                 let query = app.search_input.clone();
                 let graph_clone = graph.clone_for_background();
                 let tx = bg_tx.clone();
+                log_event("search.spawned");
                 tokio::spawn(async move {
                     match graph_clone.search_messages(&query).await {
                         Ok(hits) => {
+                            log_event("search.success");
                             let _ = tx.send(BgResult::SearchResults(hits));
                         }
                         Err(e) => {
+                            log_failure("search.request");
                             let _ =
                                 tx.send(BgResult::SearchError(e.to_string()));
                         }
@@ -1517,9 +1584,13 @@ async fn navigate_to_channel(
             let cid = channel_id.to_string();
             let g = graph.clone_for_background();
             let tx = bg_tx.clone();
+            log_event("navigate.channel.spawned");
             tokio::spawn(async move {
                 if let Ok((msgs, _next_link)) = g.get_channel_messages(&tid, &cid).await {
+                    log_event("navigate.channel.success");
                     let _ = tx.send(BgResult::ChannelMessages(cid, msgs));
+                } else {
+                    log_failure("navigate.channel.load");
                 }
             });
         }
@@ -1548,10 +1619,12 @@ async fn handle_file_picker_keys(
             }
             let path = std::path::Path::new(&path_str);
             if !path.exists() {
+                log_failure("file_share.validate.not_found");
                 app.file_upload_error = Some("File not found".to_string());
                 return;
             }
             if !path.is_file() {
+                log_failure("file_share.validate.not_file");
                 app.file_upload_error = Some("Not a file".to_string());
                 return;
             }
@@ -1562,6 +1635,7 @@ async fn handle_file_picker_keys(
                     return;
                 }
                 Err(e) => {
+                    log_failure("file_share.validate.metadata");
                     app.file_upload_error = Some(format!("Cannot read file: {}", e));
                     return;
                 }
@@ -1575,6 +1649,7 @@ async fn handle_file_picker_keys(
             let bytes = match std::fs::read(path) {
                 Ok(b) => b,
                 Err(e) => {
+                    log_failure("file_share.read_file");
                     app.file_upload_error = Some(format!("Read error: {}", e));
                     return;
                 }
@@ -1605,9 +1680,11 @@ async fn handle_file_picker_keys(
             let g = graph.clone_for_background();
             let tx = bg_tx.clone();
             let fname = filename.clone();
+            log_event("file_share.spawned");
             tokio::spawn(async move {
                 match g.upload_file(&fname, bytes).await {
                     Ok(drive_item) => {
+                        log_event("file_share.upload.success");
                         // Now send the message with attachment
                         let send_result = if let Some(cid) = chat_id {
                             g.send_message_with_attachment(&cid, &fname, &drive_item)
@@ -1618,15 +1695,18 @@ async fn handle_file_picker_keys(
                             )
                             .await
                         } else {
+                            log_failure("file_share.target.missing");
                             Err(anyhow::anyhow!("No chat or channel selected"))
                         };
                         match send_result {
                             Ok(_) => {
+                                log_event("file_share.send.success");
                                 let _ = tx.send(BgResult::FileUploaded(
                                     format!("📎 {} shared", fname),
                                 ));
                             }
                             Err(e) => {
+                                log_failure("file_share.send.failed");
                                 let _ = tx.send(BgResult::FileUploadError(
                                     format!("Upload succeeded but send failed: {}", e),
                                 ));
@@ -1634,6 +1714,7 @@ async fn handle_file_picker_keys(
                         }
                     }
                     Err(e) => {
+                        log_failure("file_share.upload.failed");
                         let _ = tx.send(BgResult::FileUploadError(e.to_string()));
                     }
                 }
@@ -1667,12 +1748,15 @@ async fn open_chat_manager(
         let g = graph.clone_for_background();
         let tx = bg_tx.clone();
         let cid = chat_id.clone();
+        log_event("chat_manager.members.spawned");
         tokio::spawn(async move {
             match g.get_chat_members(&cid).await {
                 Ok(members) => {
+                    log_event("chat_manager.members.success");
                     let _ = tx.send(BgResult::ChatMembers(members));
                 }
                 Err(e) => {
+                    log_failure("chat_manager.members.load");
                     let _ = tx.send(BgResult::ChatManagerError(
                         format!("Failed to load members: {}", e),
                     ));
@@ -1756,18 +1840,24 @@ async fn handle_chat_manager_members_keys(
                     let g = graph.clone_for_background();
                     let tx = bg_tx.clone();
                     let cid = chat_id.clone();
+                    log_event("chat_manager.remove_member.spawned");
                     tokio::spawn(async move {
                         match g.remove_chat_member(&cid, &membership_id).await {
                             Ok(()) => {
+                                log_event("chat_manager.remove_member.success");
                                 let _ = tx.send(BgResult::ChatManagerAction(
                                     "Member removed".to_string(),
                                 ));
                                 // Reload members
                                 if let Ok(members) = g.get_chat_members(&cid).await {
+                                    log_event("chat_manager.members.reload_success");
                                     let _ = tx.send(BgResult::ChatMembers(members));
+                                } else {
+                                    log_failure("chat_manager.members.reload");
                                 }
                             }
                             Err(e) => {
+                                log_failure("chat_manager.remove_member.failed");
                                 let _ = tx.send(BgResult::ChatManagerError(e.to_string()));
                             }
                         }
@@ -1788,14 +1878,17 @@ async fn handle_chat_manager_members_keys(
                     if let Some(membership_id) = my_membership.id.clone() {
                         let g = graph.clone_for_background();
                         let tx = bg_tx.clone();
+                        log_event("chat_manager.leave.spawned");
                         tokio::spawn(async move {
                             match g.remove_chat_member(&chat_id, &membership_id).await {
                                 Ok(()) => {
+                                    log_event("chat_manager.leave.success");
                                     let _ = tx.send(BgResult::ChatManagerAction(
                                         "Left the chat".to_string(),
                                     ));
                                 }
                                 Err(e) => {
+                                    log_failure("chat_manager.leave.failed");
                                     let _ = tx.send(BgResult::ChatManagerError(
                                         format!("Failed to leave: {}", e),
                                     ));
@@ -1890,17 +1983,23 @@ async fn handle_chat_manager_add_keys(
                 let g = graph.clone_for_background();
                 let tx = bg_tx.clone();
                 let cid = chat_id.clone();
+                log_event("chat_manager.add_member.spawned");
                 tokio::spawn(async move {
                     match g.add_chat_member(&cid, &uid).await {
                         Ok(()) => {
+                            log_event("chat_manager.add_member.success");
                             let _ = tx.send(BgResult::ChatManagerAction(
                                 "Member added".to_string(),
                             ));
                             if let Ok(members) = g.get_chat_members(&cid).await {
+                                log_event("chat_manager.members.reload_success");
                                 let _ = tx.send(BgResult::ChatMembers(members));
+                            } else {
+                                log_failure("chat_manager.members.reload");
                             }
                         }
                         Err(e) => {
+                            log_failure("chat_manager.add_member.failed");
                             let _ = tx.send(BgResult::ChatManagerError(e.to_string()));
                         }
                     }
@@ -1978,6 +2077,7 @@ async fn load_messages(graph: &client::GraphClient, app: &mut app::App) {
     app.cancel_reply();
     app.cancel_edit();
     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        log_event("chat_messages.load.start");
         // Clear delta token so next auto-refresh seeds a fresh one
         app.chat_delta_links.remove(&chat_id);
         match graph.get_messages(&chat_id).await {
@@ -1986,8 +2086,10 @@ async fn load_messages(graph: &client::GraphClient, app: &mut app::App) {
                 app.messages_next_link = next_link;
                 app.detect_new_messages();
                 app.status_message.clear();
+                log_event("chat_messages.load.success");
             }
             Err(e) => {
+                log_failure("chat_messages.load.failed");
                 app.show_error(
                     "Load Messages Failed",
                     "Could not load messages for this chat.",
@@ -1997,19 +2099,26 @@ async fn load_messages(graph: &client::GraphClient, app: &mut app::App) {
         }
         // Mark chat as read (best-effort)
         let user_id = app.current_user_id().to_string();
-        let _ = graph.mark_chat_read(&chat_id, &user_id).await;
+        if graph.mark_chat_read(&chat_id, &user_id).await.is_err() {
+            log_failure("chat_mark_read.failed");
+        } else {
+            log_event("chat_mark_read.success");
+        }
     }
 }
 
 async fn load_older_messages(graph: &client::GraphClient, app: &mut app::App) {
     if let Some(next_link) = app.messages_next_link.clone() {
         app.loading_more_messages = true;
+        log_event("chat_messages.page.load");
         match graph.get_messages_page(&next_link).await {
             Ok((older, next)) => {
                 app.messages_next_link = next;
                 app.prepend_older_messages(older);
+                log_event("chat_messages.page.success");
             }
             Err(e) => {
+                log_failure("chat_messages.page.failed");
                 app.show_error(
                     "Load More Failed",
                     "Could not load older messages.",
@@ -2024,12 +2133,15 @@ async fn load_older_messages(graph: &client::GraphClient, app: &mut app::App) {
 async fn load_older_channel_messages(graph: &client::GraphClient, app: &mut app::App) {
     if let Some(next_link) = app.channel_messages_next_link.clone() {
         app.loading_more_messages = true;
+        log_event("channel_messages.page.load");
         match graph.get_messages_page(&next_link).await {
             Ok((older, next)) => {
                 app.channel_messages_next_link = next;
                 app.prepend_older_channel_messages(older);
+                log_event("channel_messages.page.success");
             }
             Err(e) => {
+                log_failure("channel_messages.page.failed");
                 app.show_error(
                     "Load More Failed",
                     "Could not load older channel messages.",
@@ -2043,12 +2155,15 @@ async fn load_older_channel_messages(graph: &client::GraphClient, app: &mut app:
 
 async fn send_message(graph: &client::GraphClient, app: &mut app::App, content: &str) {
     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        log_event("chat_send.start");
         match graph.send_message(&chat_id, content).await {
             Ok(_) => {
+                log_event("chat_send.success");
                 app.status_message = "Message sent".to_string();
                 load_messages(graph, app).await;
             }
             Err(e) => {
+                log_failure("chat_send.failed");
                 app.show_error(
                     "Send Failed",
                     "Could not send your message.",
@@ -2066,13 +2181,16 @@ async fn send_reply(
     content: &str,
 ) {
     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        log_event("chat_reply.start");
         match graph.send_reply(&chat_id, reply_to_id, content).await {
             Ok(_) => {
+                log_event("chat_reply.success");
                 app.status_message = "Reply sent".to_string();
                 app.cancel_reply();
                 load_messages(graph, app).await;
             }
             Err(e) => {
+                log_failure("chat_reply.failed");
                 app.show_error(
                     "Reply Failed",
                     "Could not send your reply.",
@@ -2090,13 +2208,16 @@ async fn edit_message(
     content: &str,
 ) {
     if let Some(chat_id) = app.selected_chat_id().map(String::from) {
+        log_event("chat_edit.start");
         match graph.update_message(&chat_id, message_id, content).await {
             Ok(_) => {
+                log_event("chat_edit.success");
                 app.status_message = "Message edited".to_string();
                 app.cancel_edit();
                 load_messages(graph, app).await;
             }
             Err(e) => {
+                log_failure("chat_edit.failed");
                 app.show_error(
                     "Edit Failed",
                     "Could not edit your message.",
@@ -2112,13 +2233,16 @@ async fn delete_message(graph: &client::GraphClient, app: &mut app::App) {
         app.selected_chat_id().map(String::from),
         app.selected_message_id().map(String::from),
     ) {
+        log_event("chat_delete.start");
         match graph.soft_delete_message(&chat_id, &msg_id).await {
             Ok(_) => {
+                log_event("chat_delete.success");
                 app.status_message = "Message deleted".to_string();
                 app.selected_message = None;
                 load_messages(graph, app).await;
             }
             Err(e) => {
+                log_failure("chat_delete.failed");
                 app.show_error(
                     "Delete Failed",
                     "Could not delete the message.",
@@ -2139,16 +2263,19 @@ async fn send_channel_reply(
         app.selected_team_id().map(String::from),
         app.selected_channel_id().map(String::from),
     ) {
+        log_event("channel_reply.start");
         match graph
             .reply_to_channel_message(&team_id, &channel_id, reply_to_id, content)
             .await
         {
             Ok(_) => {
+                log_event("channel_reply.success");
                 app.status_message = "Reply sent".to_string();
                 app.cancel_reply();
                 load_channel_messages_cached(graph, app).await;
             }
             Err(e) => {
+                log_failure("channel_reply.failed");
                 app.show_error(
                     "Reply Failed",
                     "Could not send your reply.",
@@ -2171,9 +2298,11 @@ async fn delete_channel_message(_graph: &client::GraphClient, app: &mut app::App
 async fn create_new_chat(graph: &client::GraphClient, app: &mut app::App, email: &str) {
     let my_id = app.current_user_id().to_string();
     app.status_message = format!("Creating chat with {}...", email);
+    log_event("chat_create.start");
 
     match graph.create_chat(email, &my_id).await {
         Ok(new_chat) => {
+            log_event("chat_create.success");
             let new_id = new_chat.id.clone();
             match graph.list_chats().await {
                 Ok(chats) => {
@@ -2184,13 +2313,16 @@ async fn create_new_chat(graph: &client::GraphClient, app: &mut app::App, email:
                     load_messages(graph, app).await;
                     app.active_panel = Panel::Input;
                     app.status_message = format!("Chat with {} ready", email);
+                    log_event("chat_create.list_refresh.success");
                 }
                 Err(_) => {
+                    log_failure("chat_create.list_refresh");
                     app.status_message = "Chat created, press r to refresh".to_string();
                 }
             }
         }
         Err(e) => {
+            log_failure("chat_create.failed");
             app.show_error(
                 "Create Chat Failed",
                 &format!("Could not create a chat with {}.", email),
@@ -2202,14 +2334,17 @@ async fn create_new_chat(graph: &client::GraphClient, app: &mut app::App, email:
 
 async fn refresh_all(graph: &client::GraphClient, app: &mut app::App) {
     app.status_message = "Refreshing...".to_string();
+    log_event("refresh.manual.start");
     match graph.list_chats().await {
         Ok(chats) => {
             app.chats = chats;
             app.update_total_unread();
             load_messages(graph, app).await;
             app.status_message = "Refreshed".to_string();
+            log_event("refresh.manual.success");
         }
         Err(e) => {
+            log_failure("refresh.manual.failed");
             app.show_error(
                 "Refresh Failed",
                 "Could not refresh chats.",
@@ -2242,15 +2377,22 @@ fn spawn_auto_refresh(
         .cloned();
 
     tokio::spawn(async move {
+        log_event("refresh.auto.spawned");
         // Refresh token if needed
         if let Ok(Some(new_token)) = auth::get_valid_token(&bg_http, &bg_config).await {
+            log_event("refresh.auto.token.success");
             let _ = tx.send(BgResult::TokenRefreshed(new_token.access_token.clone()));
+        } else {
+            log_failure("refresh.auto.token");
         }
 
         match view_mode {
             ViewMode::Chats => {
                 if let Ok(chats) = bg_graph.list_chats().await {
+                    log_event("refresh.auto.chats.success");
                     let _ = tx.send(BgResult::RefreshedChats(chats));
+                } else {
+                    log_failure("refresh.auto.chats");
                 }
                 if let Some(cid) = chat_id {
                     if delta_link.is_some() {
@@ -2258,13 +2400,17 @@ fn spawn_auto_refresh(
                         if let Ok((msgs, new_delta)) =
                             bg_graph.get_messages_delta(&cid, delta_link.as_deref()).await
                         {
+                            log_event("refresh.auto.delta.success");
                             let _ = tx.send(BgResult::DeltaChatMessages(cid, msgs, new_delta));
+                        } else {
+                            log_failure("refresh.auto.delta");
                         }
                     } else {
                         // First load or no delta token: do initial delta query to get token
                         if let Ok((msgs, new_delta)) =
                             bg_graph.get_messages_delta(&cid, None).await
                         {
+                            log_event("refresh.auto.seed_delta.success");
                             let _ = tx.send(BgResult::RefreshedChatMessages(
                                 msgs,
                                 None,
@@ -2277,6 +2423,8 @@ fn spawn_auto_refresh(
                                     Some(link),
                                 ));
                             }
+                        } else {
+                            log_failure("refresh.auto.seed_delta");
                         }
                     }
                 }
@@ -2284,7 +2432,10 @@ fn spawn_auto_refresh(
             ViewMode::Teams => {
                 if let (Some(tid), Some(cid)) = (team_id, channel_id) {
                     if let Ok((msgs, next_link)) = bg_graph.get_channel_messages(&tid, &cid).await {
+                        log_event("refresh.auto.channel.success");
                         let _ = tx.send(BgResult::RefreshedChannelMessages(cid, msgs, next_link));
+                    } else {
+                        log_failure("refresh.auto.channel");
                     }
                 }
             }
@@ -2315,6 +2466,7 @@ fn spawn_presence_load(
     }
 
     tokio::spawn(async move {
+        log_event("presence.load.spawned");
         // Own presence + others' presence in parallel
         let others_graph = bg_graph.clone_for_background();
         let my_presence_fut = bg_graph.get_my_presence();
@@ -2332,15 +2484,21 @@ fn spawn_presence_load(
 
         if let Ok(p) = my_result {
             if let Some(avail) = p.availability {
+                log_event("presence.me.success");
                 let _ = tx.send(BgResult::MyPresence(avail));
             }
+        } else {
+            log_failure("presence.me.failed");
         }
         let map: std::collections::HashMap<String, String> = others_result
             .into_iter()
             .filter_map(|p| p.availability.map(|a| (p.id, a)))
             .collect();
         if !map.is_empty() {
+            log_event("presence.others.success");
             let _ = tx.send(BgResult::PresenceMap(map));
+        } else {
+            log_event("presence.others.empty");
         }
     });
 }
@@ -2351,8 +2509,10 @@ async fn load_teams_with_preload(
     bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
 ) {
     app.status_message = "Loading teams...".to_string();
+    log_event("teams.load.start");
     match graph.list_teams().await {
         Ok(teams) => {
+            log_event("teams.load.success");
             app.teams = teams;
             if !app.teams.is_empty() {
                 app.selected_team = 0;
@@ -2364,6 +2524,7 @@ async fn load_teams_with_preload(
             app.status_message.clear();
         }
         Err(e) => {
+            log_failure("teams.load.failed");
             app.show_error(
                 "Load Teams Failed",
                 "Could not load your teams.",
@@ -2385,7 +2546,10 @@ fn spawn_channels_preload(
         let team_id = team.id.clone();
         tokio::spawn(async move {
             if let Ok(channels) = bg_graph.list_channels(&team_id).await {
+                log_event("teams.preload.channels.success");
                 let _ = tx.send(BgResult::Channels(team_id, channels));
+            } else {
+                log_failure("teams.preload.channels.failed");
             }
         });
     }
@@ -2397,8 +2561,10 @@ async fn load_channels_with_preload(
     bg_tx: &tokio::sync::mpsc::UnboundedSender<BgResult>,
 ) {
     if let Some(team_id) = app.selected_team_id().map(String::from) {
+        log_event("channels.load.start");
         match graph.list_channels(&team_id).await {
             Ok(channels) => {
+                log_event("channels.load.success");
                 app.channels_cache.insert(team_id.clone(), channels.clone());
                 app.channels = channels;
                 app.selected_channel = 0;
@@ -2410,6 +2576,7 @@ async fn load_channels_with_preload(
                 }
             }
             Err(e) => {
+                log_failure("channels.load.failed");
                 app.show_error(
                     "Load Channels Failed",
                     "Could not load channels for this team.",
@@ -2439,7 +2606,10 @@ fn spawn_channel_messages_preload(
         let ch_id = ch.id.clone();
         tokio::spawn(async move {
             if let Ok((msgs, _)) = bg_graph.get_channel_messages(&tid, &ch_id).await {
+                log_event("channels.preload.messages.success");
                 let _ = tx.send(BgResult::ChannelMessages(ch_id, msgs));
+            } else {
+                log_failure("channels.preload.messages.failed");
             }
         });
     }
@@ -2453,8 +2623,10 @@ async fn load_channel_messages_cached(graph: &client::GraphClient, app: &mut app
         app.selected_team_id().map(String::from),
         app.selected_channel_id().map(String::from),
     ) {
+        log_event("channel_messages.load.start");
         match graph.get_channel_messages(&team_id, &channel_id).await {
             Ok((msgs, next_link)) => {
+                log_event("channel_messages.load.success");
                 app.channel_permission_denied = false;
                 app.channel_message_cache.insert(channel_id, msgs.clone());
                 app.channel_messages = msgs;
@@ -2462,8 +2634,10 @@ async fn load_channel_messages_cached(graph: &client::GraphClient, app: &mut app
                 app.status_message.clear();
             }
             Err(e) => {
+                log_failure("channel_messages.load.failed");
                 let err_str = e.to_string();
                 if err_str.contains("403") {
+                    log_failure("channel_messages.load.permission");
                     app.channel_permission_denied = true;
                     app.channel_messages.clear();
                     app.channel_messages_next_link = None;
@@ -2488,15 +2662,19 @@ async fn load_and_toggle_members(graph: &client::GraphClient, app: &mut app::App
         app.selected_team_id().map(String::from),
         app.selected_channel_id().map(String::from),
     ) {
+        log_event("channel_members.load.start");
         match graph.get_channel_members(&team_id, &channel_id).await {
             Ok(members) => {
+                log_event("channel_members.load.success");
                 app.channel_members = members;
                 app.status_message.clear();
             }
             Err(e) => {
+                log_failure("channel_members.load.failed");
                 let err_str = e.to_string();
                 app.show_members = false;
                 if err_str.contains("403") {
+                    log_failure("channel_members.load.permission");
                     app.show_error(
                         "Insufficient Permissions",
                         "Loading channel members requires the ChannelMessage.Read.All permission, which needs admin consent.",
@@ -2519,12 +2697,15 @@ async fn send_channel_message(graph: &client::GraphClient, app: &mut app::App, c
         app.selected_team_id().map(String::from),
         app.selected_channel_id().map(String::from),
     ) {
+        log_event("channel_send.start");
         match graph.send_channel_message(&team_id, &channel_id, content).await {
             Ok(_) => {
+                log_event("channel_send.success");
                 app.status_message = "Channel message sent".to_string();
                 load_channel_messages_cached(graph, app).await;
             }
             Err(e) => {
+                log_failure("channel_send.failed");
                 app.show_error(
                     "Send Failed",
                     "Could not send channel message.",

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Attachment opening now prioritizes image previews when a selected message contains both image and non-image attachments
+- Expanded troubleshooting logging coverage across Graph transport, async background flows, file sharing, and image preview queue/download/decode paths (non-PII labels only)
 
 ### Fixed
 

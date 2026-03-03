@@ -16,9 +16,17 @@ pub fn log_event(event: &str) -> Result<()> {
     append_entry("INFO", event)
 }
 
+pub fn try_log_event(event: &str) {
+    let _ = log_event(event);
+}
+
 pub fn log_failure(operation: &str) -> Result<()> {
     validate_event_label(operation)?;
     append_entry("ERROR", &format!("failure.{}", operation))
+}
+
+pub fn try_log_failure(operation: &str) {
+    let _ = log_failure(operation);
 }
 
 pub fn log_file_path() -> Result<PathBuf> {

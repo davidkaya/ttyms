@@ -37,6 +37,7 @@ Feature roadmap for the terminal Microsoft Teams client. Most features below are
 - **Share files in chat** — upload and share files via `f` key (up to 4MB, OneDrive-backed)
 - **Image previews** — inline decoded previews for image attachments with Enter-to-open support
 - **Troubleshooting logs** — standard per-user log file with non-PII lifecycle/error event labels
+- **Expanded troubleshooting diagnostics** — image preview + background flow logging with non-PII operation labels
 
 - **Mouse support** — click to select chats/teams/channels, scroll messages, focus panels
 

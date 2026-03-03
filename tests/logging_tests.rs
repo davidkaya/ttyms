@@ -2,7 +2,9 @@
 
 #[cfg(test)]
 mod logging_tests {
-    use ttyms::logging::{init_logging, is_safe_event_label, log_event, log_file_path};
+    use ttyms::logging::{
+        init_logging, is_safe_event_label, log_event, log_file_path, try_log_event, try_log_failure,
+    };
 
     #[test]
     fn log_file_path_uses_ttyms_log_file() {
@@ -40,5 +42,17 @@ mod logging_tests {
         let path = log_file_path().expect("log path should resolve");
         let content = std::fs::read_to_string(&path).expect("log file should be readable");
         assert!(content.contains("test.healthcheck"));
+    }
+
+    #[test]
+    fn best_effort_helpers_write_without_panicking() {
+        init_logging().expect("logger initialization should succeed");
+        try_log_event("test.try_event");
+        try_log_failure("test.try_failure");
+
+        let path = log_file_path().expect("log path should resolve");
+        let content = std::fs::read_to_string(&path).expect("log file should be readable");
+        assert!(content.contains("test.try_event"));
+        assert!(content.contains("failure.test.try_failure"));
     }
 }

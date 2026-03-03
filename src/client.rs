@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use zeroize::Zeroize;
 
+use crate::logging;
 use crate::models::*;
 
 fn looks_like_image_bytes(bytes: &[u8]) -> bool {
@@ -17,6 +18,25 @@ fn append_query_hint(url: &str, key: &str, value: &str) -> String {
         format!("{url}&{key}={value}")
     } else {
         format!("{url}?{key}={value}")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryDownloadFailure {
+    Transport,
+    HttpStatus,
+    ReadBody,
+    NonImageBody,
+}
+
+impl BinaryDownloadFailure {
+    pub fn as_label(self) -> &'static str {
+        match self {
+            BinaryDownloadFailure::Transport => "image_preview.download.transport",
+            BinaryDownloadFailure::HttpStatus => "image_preview.download.http_status",
+            BinaryDownloadFailure::ReadBody => "image_preview.download.read_body",
+            BinaryDownloadFailure::NonImageBody => "image_preview.download.non_image",
+        }
     }
 }
 
@@ -47,23 +67,45 @@ impl GraphClient {
     }
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
-        let resp = self
+        let resp = match self
             .client
             .get(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.get.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.get.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, body);
         }
-        resp.json::<T>()
+        match resp
+            .json::<T>()
             .await
             .context("Failed to parse Graph API response")
+        {
+            Ok(value) => {
+                logging::try_log_event("graph.get.success");
+                Ok(value)
+            }
+            Err(e) => {
+                logging::try_log_failure("graph.get.parse");
+                Err(e)
+            }
+        }
     }
 
-    pub async fn download_binary(&self, url: &str) -> Result<Vec<u8>> {
+    pub async fn download_binary_with_reason(
+        &self,
+        url: &str,
+    ) -> std::result::Result<Vec<u8>, BinaryDownloadFailure> {
         let mut candidate_urls = vec![url.to_string()];
         for hinted in [
             append_query_hint(url, "download", "1"),
@@ -74,7 +116,7 @@ impl GraphClient {
             }
         }
 
-        let mut last_error = String::new();
+        let mut last_failure = BinaryDownloadFailure::Transport;
         for candidate in candidate_urls {
             let resp = self
                 .client
@@ -85,31 +127,31 @@ impl GraphClient {
                 .await;
             let resp = match resp {
                 Ok(r) => r,
-                Err(e) => {
-                    last_error = format!("request failed for {candidate}: {e}");
+                Err(_) => {
+                    last_failure = BinaryDownloadFailure::Transport;
                     continue;
                 }
             };
             let status = resp.status();
             if !status.is_success() {
-                let body = resp.text().await.unwrap_or_default();
-                last_error = format!("status {} for {}: {}", status, candidate, body);
+                let _ = resp.text().await;
+                last_failure = BinaryDownloadFailure::HttpStatus;
                 continue;
             }
             let bytes = match resp.bytes().await {
                 Ok(b) => b.to_vec(),
-                Err(e) => {
-                    last_error = format!("read failed for {candidate}: {e}");
+                Err(_) => {
+                    last_failure = BinaryDownloadFailure::ReadBody;
                     continue;
                 }
             };
             if looks_like_image_bytes(&bytes) {
                 return Ok(bytes);
             }
-            last_error = format!("non-image response for {candidate}");
+            last_failure = BinaryDownloadFailure::NonImageBody;
         }
 
-        anyhow::bail!("Image download failed: {}", last_error);
+        Err(last_failure)
     }
 
     async fn post_json<T: serde::de::DeserializeOwned>(
@@ -117,36 +159,64 @@ impl GraphClient {
         url: &str,
         body: &serde_json::Value,
     ) -> Result<T> {
-        let resp = self
+        let resp = match self
             .client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .json(body)
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.post_json.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.post_json.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, body);
         }
-        resp.json::<T>()
+        match resp
+            .json::<T>()
             .await
             .context("Failed to parse Graph API response")
+        {
+            Ok(value) => {
+                logging::try_log_event("graph.post_json.success");
+                Ok(value)
+            }
+            Err(e) => {
+                logging::try_log_failure("graph.post_json.parse");
+                Err(e)
+            }
+        }
     }
 
     async fn post_no_content(&self, url: &str, body: &serde_json::Value) -> Result<()> {
-        let resp = self
+        let resp = match self
             .client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .json(body)
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.post_no_content.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.post_no_content.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, body);
         }
+        logging::try_log_event("graph.post_no_content.success");
         Ok(())
     }
 
@@ -155,67 +225,113 @@ impl GraphClient {
         url: &str,
         body: &serde_json::Value,
     ) -> Result<T> {
-        let resp = self
+        let resp = match self
             .client
             .patch(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .json(body)
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.patch_json.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.patch_json.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, body);
         }
-        resp.json::<T>()
+        match resp
+            .json::<T>()
             .await
             .context("Failed to parse Graph API response")
+        {
+            Ok(value) => {
+                logging::try_log_event("graph.patch_json.success");
+                Ok(value)
+            }
+            Err(e) => {
+                logging::try_log_failure("graph.patch_json.parse");
+                Err(e)
+            }
+        }
     }
 
     async fn post_no_response(&self, url: &str) -> Result<()> {
-        let resp = self
+        let resp = match self
             .client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .header("Content-Length", "0")
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.post_no_response.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.post_no_response.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, body);
         }
+        logging::try_log_event("graph.post_no_response.success");
         Ok(())
     }
 
     async fn patch_no_content(&self, url: &str, body: &serde_json::Value) -> Result<()> {
-        let resp = self
+        let resp = match self
             .client
             .patch(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .json(body)
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.patch_no_content.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.patch_no_content.http");
             let text = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, text);
         }
+        logging::try_log_event("graph.patch_no_content.success");
         Ok(())
     }
 
     async fn delete(&self, url: &str) -> Result<()> {
-        let resp = self
+        let resp = match self
             .client
             .delete(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.delete.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.delete.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, body);
         }
+        logging::try_log_event("graph.delete.success");
         Ok(())
     }
 
@@ -225,22 +341,41 @@ impl GraphClient {
         bytes: Vec<u8>,
         content_type: &str,
     ) -> Result<T> {
-        let resp = self
+        let resp = match self
             .client
             .put(url)
             .header("Authorization", format!("Bearer {}", self.access_token))
             .header("Content-Type", content_type)
             .body(bytes)
             .send()
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                logging::try_log_failure("graph.put_bytes.transport");
+                return Err(e.into());
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
+            logging::try_log_failure("graph.put_bytes.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Graph API error ({}): {}", status, body);
         }
-        resp.json::<T>()
+        match resp
+            .json::<T>()
             .await
             .context("Failed to parse Graph API response")
+        {
+            Ok(value) => {
+                logging::try_log_event("graph.put_bytes.success");
+                Ok(value)
+            }
+            Err(e) => {
+                logging::try_log_failure("graph.put_bytes.parse");
+                Err(e)
+            }
+        }
     }
 
     // ---- User & Profile ----
@@ -303,7 +438,10 @@ impl GraphClient {
         }
     }
 
-    pub async fn get_messages_page(&self, next_link: &str) -> Result<(Vec<Message>, Option<String>)> {
+    pub async fn get_messages_page(
+        &self,
+        next_link: &str,
+    ) -> Result<(Vec<Message>, Option<String>)> {
         let resp: PagedResponse<Message> = self.get(next_link).await?;
         let mut messages = resp.value;
         messages.reverse();
@@ -420,15 +558,8 @@ impl GraphClient {
         self.patch_no_content(&url, &body).await
     }
 
-    pub async fn add_chat_member(
-        &self,
-        chat_id: &str,
-        user_id: &str,
-    ) -> Result<()> {
-        let url = format!(
-            "https://graph.microsoft.com/v1.0/chats/{}/members",
-            chat_id
-        );
+    pub async fn add_chat_member(&self, chat_id: &str, user_id: &str) -> Result<()> {
+        let url = format!("https://graph.microsoft.com/v1.0/chats/{}/members", chat_id);
         let body = serde_json::json!({
             "@odata.type": "#microsoft.graph.aadUserConversationMember",
             "roles": ["owner"],
@@ -437,11 +568,7 @@ impl GraphClient {
         self.post_no_content(&url, &body).await
     }
 
-    pub async fn remove_chat_member(
-        &self,
-        chat_id: &str,
-        membership_id: &str,
-    ) -> Result<()> {
+    pub async fn remove_chat_member(&self, chat_id: &str, membership_id: &str) -> Result<()> {
         let url = format!(
             "https://graph.microsoft.com/v1.0/chats/{}/members/{}",
             chat_id, membership_id
@@ -516,11 +643,7 @@ impl GraphClient {
         Ok(resp.value)
     }
 
-    pub async fn set_my_presence(
-        &self,
-        availability: &str,
-        activity: &str,
-    ) -> Result<()> {
+    pub async fn set_my_presence(&self, availability: &str, activity: &str) -> Result<()> {
         let url = "https://graph.microsoft.com/v1.0/me/presence/setUserPreferredPresence";
         let body = serde_json::json!({
             "availability": availability,
@@ -626,7 +749,8 @@ impl GraphClient {
             "https://graph.microsoft.com/v1.0/me/drive/root:/Microsoft Teams Chat Files/{}:/content",
             encoded_name
         );
-        self.put_bytes(&url, bytes, "application/octet-stream").await
+        self.put_bytes(&url, bytes, "application/octet-stream")
+            .await
     }
 
     /// Send a chat message with a file attachment reference
@@ -727,12 +851,18 @@ impl GraphClient {
             .header("Authorization", format!("Bearer {}", self.access_token))
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                logging::try_log_failure("graph.mark_chat_read.transport");
+                e
+            })?;
         let status = resp.status();
         if !status.is_success() && status.as_u16() != 204 {
+            logging::try_log_failure("graph.mark_chat_read.http");
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Failed to mark chat read ({}): {}", status, body);
         }
+        logging::try_log_event("graph.mark_chat_read.success");
         Ok(())
     }
 }
@@ -745,7 +875,8 @@ impl Drop for GraphClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_query_hint, looks_like_image_bytes};
+    use super::{append_query_hint, looks_like_image_bytes, BinaryDownloadFailure};
+    use crate::logging::is_safe_event_label;
 
     #[test]
     fn detects_png_signature() {
@@ -769,5 +900,16 @@ mod tests {
             append_query_hint("https://example.com/file.png?x=1", "download", "1"),
             "https://example.com/file.png?x=1&download=1"
         );
+    }
+
+    #[test]
+    fn download_failure_labels_are_safe() {
+        let labels = [
+            BinaryDownloadFailure::Transport.as_label(),
+            BinaryDownloadFailure::HttpStatus.as_label(),
+            BinaryDownloadFailure::ReadBody.as_label(),
+            BinaryDownloadFailure::NonImageBody.as_label(),
+        ];
+        assert!(labels.into_iter().all(is_safe_event_label));
     }
 }
