@@ -28,6 +28,7 @@ A secure, fast terminal UI client for Microsoft Teams messaging, built in Rust w
 - **Image previews** — image attachments show inline decoded terminal previews (grayscale block rendering) with Enter-to-open
 - **Settings dialog** — configurable refresh interval via in-app settings
 - **Delta-based sync** — incremental message updates for efficient polling
+- **Troubleshooting logs** — writes non-PII lifecycle/error events to a standard per-user log file
 - **Secure by design** — tokens stored in OS credential manager, sensitive data zeroized in memory
 - **Auto-refresh** — messages update automatically every 15 seconds with terminal bell for new messages
 - **Vim-style navigation** — use `j`/`k` or arrow keys to navigate
@@ -229,6 +230,14 @@ ttyms --pkce              # Use PKCE browser flow instead of device code
 ttyms --logout            # Clear stored credentials securely
 ttyms --client-id <ID>    # Override client_id from config
 ```
+
+## Troubleshooting Logs
+
+ttyms writes troubleshooting logs to a per-user file and only logs predefined event labels (no message text, user identifiers, tokens, or other PII).
+
+- **Windows**: `%LOCALAPPDATA%\ttyms\logs\ttyms.log`
+- **macOS**: `~/Library/Logs/ttyms/ttyms.log`
+- **Linux**: `$XDG_STATE_HOME/ttyms/logs/ttyms.log` (fallback: `~/.local/state/ttyms/logs/ttyms.log`)
 
 ## Security
 

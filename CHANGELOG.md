@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Image attachment previews** — messages now render image attachments with decoded grayscale block previews and Enter-to-open hints
+- **Troubleshooting log file** — app lifecycle/error events are now appended to a standard per-user log file (`ttyms.log`) with non-PII event labels only
 
 ### Changed
 

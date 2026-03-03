@@ -2,6 +2,7 @@ mod app;
 mod auth;
 mod client;
 mod config;
+mod logging;
 mod models;
 mod ui;
 
@@ -15,6 +16,12 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{collections::HashSet, io};
 
 use app::{AppScreen, DialogMode, Panel, TeamsPanel, ViewMode};
+
+fn warn_on_log_failure(result: Result<()>) {
+    if let Err(e) = result {
+        eprintln!("Warning: logging failed: {}", e);
+    }
+}
 
 /// Simple base64 encoder for OSC 52 clipboard (no external dep needed)
 fn base64_encode(input: &str) -> String {
@@ -112,8 +119,15 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    if let Err(e) = logging::init_logging() {
+        eprintln!("Warning: log initialization failed: {}", e);
+    } else {
+        warn_on_log_failure(logging::log_event("app.start"));
+    }
+
     if args.iter().any(|a| a == "--logout") {
         auth::clear_stored_tokens()?;
+        warn_on_log_failure(logging::log_event("auth.logout"));
         println!("Credentials cleared securely from OS credential store.");
         return Ok(());
     }
@@ -121,6 +135,7 @@ async fn main() -> Result<()> {
     let mut config = match config::load_config() {
         Ok(c) => c,
         Err(e) => {
+            warn_on_log_failure(logging::log_failure("config.load"));
             eprintln!("Error: {}\n", e);
             config::print_setup_guide();
             return Ok(());
@@ -132,6 +147,7 @@ async fn main() -> Result<()> {
         if let Some(id) = args.get(pos + 1) {
             config.client_id = id.clone();
         } else {
+            warn_on_log_failure(logging::log_failure("cli.client_id_missing"));
             eprintln!("Error: --client-id requires a value");
             return Ok(());
         }
@@ -139,11 +155,23 @@ async fn main() -> Result<()> {
 
     let http_client = reqwest::Client::new();
     let use_pkce = args.iter().any(|a| a == "--pkce");
-    let token = authenticate(&http_client, &config, use_pkce).await?;
+    warn_on_log_failure(logging::log_event(if use_pkce {
+        "auth.flow.pkce"
+    } else {
+        "auth.flow.device_code"
+    }));
+    let token = match authenticate(&http_client, &config, use_pkce).await {
+        Ok(token) => token,
+        Err(e) => {
+            warn_on_log_failure(logging::log_failure("auth.authenticate"));
+            return Err(e);
+        }
+    };
 
     // Restore terminal on panic
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
+        let _ = logging::log_failure("app.panic");
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
         original_hook(panic);
@@ -161,7 +189,10 @@ async fn main() -> Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
 
     if let Err(ref e) = result {
+        warn_on_log_failure(logging::log_failure("app.run"));
         eprintln!("Error: {}", e);
+    } else {
+        warn_on_log_failure(logging::log_event("app.exit"));
     }
 
     result
@@ -173,15 +204,19 @@ async fn authenticate(
     use_pkce: bool,
 ) -> Result<auth::TokenResponse> {
     if let Some(token) = auth::get_valid_token(client, config).await? {
+        warn_on_log_failure(logging::log_event("auth.cached_token"));
         return Ok(token);
     }
 
     if use_pkce {
+        warn_on_log_failure(logging::log_event("auth.pkce.start"));
         println!("\n  Opening browser for sign-in (PKCE flow)...");
         let token = auth::authenticate_browser(client, config).await?;
+        warn_on_log_failure(logging::log_event("auth.pkce.success"));
         println!("  Authenticated! Tokens stored securely.\n");
         Ok(token)
     } else {
+        warn_on_log_failure(logging::log_event("auth.device_code.start"));
         println!("\n  Authentication required\n");
         let dc = auth::request_device_code(client, config).await?;
         println!("  {}\n", dc.message);
@@ -190,6 +225,7 @@ async fn authenticate(
         }
         println!("  Waiting for sign-in...");
         let token = auth::poll_for_token(client, config, &dc.device_code, dc.interval).await?;
+        warn_on_log_failure(logging::log_event("auth.device_code.success"));
         println!("  Authenticated! Tokens stored securely.\n");
         Ok(token)
     }
