@@ -24,16 +24,37 @@ fn append_query_hint(url: &str, key: &str, value: &str) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryDownloadFailure {
     Transport,
-    HttpStatus,
+    Http401,
+    Http403,
+    Http404,
+    Http4xx,
+    Http5xx,
+    HttpOther,
     ReadBody,
     NonImageBody,
 }
 
 impl BinaryDownloadFailure {
+    fn from_http_status(code: u16) -> Self {
+        match code {
+            401 => BinaryDownloadFailure::Http401,
+            403 => BinaryDownloadFailure::Http403,
+            404 => BinaryDownloadFailure::Http404,
+            400..=499 => BinaryDownloadFailure::Http4xx,
+            500..=599 => BinaryDownloadFailure::Http5xx,
+            _ => BinaryDownloadFailure::HttpOther,
+        }
+    }
+
     pub fn as_label(self) -> &'static str {
         match self {
             BinaryDownloadFailure::Transport => "image_preview.download.transport",
-            BinaryDownloadFailure::HttpStatus => "image_preview.download.http_status",
+            BinaryDownloadFailure::Http401 => "image_preview.download.http_401",
+            BinaryDownloadFailure::Http403 => "image_preview.download.http_403",
+            BinaryDownloadFailure::Http404 => "image_preview.download.http_404",
+            BinaryDownloadFailure::Http4xx => "image_preview.download.http_4xx",
+            BinaryDownloadFailure::Http5xx => "image_preview.download.http_5xx",
+            BinaryDownloadFailure::HttpOther => "image_preview.download.http_other",
             BinaryDownloadFailure::ReadBody => "image_preview.download.read_body",
             BinaryDownloadFailure::NonImageBody => "image_preview.download.non_image",
         }
@@ -135,7 +156,7 @@ impl GraphClient {
             let status = resp.status();
             if !status.is_success() {
                 let _ = resp.text().await;
-                last_failure = BinaryDownloadFailure::HttpStatus;
+                last_failure = BinaryDownloadFailure::from_http_status(status.as_u16());
                 continue;
             }
             let bytes = match resp.bytes().await {
@@ -906,7 +927,12 @@ mod tests {
     fn download_failure_labels_are_safe() {
         let labels = [
             BinaryDownloadFailure::Transport.as_label(),
-            BinaryDownloadFailure::HttpStatus.as_label(),
+            BinaryDownloadFailure::Http401.as_label(),
+            BinaryDownloadFailure::Http403.as_label(),
+            BinaryDownloadFailure::Http404.as_label(),
+            BinaryDownloadFailure::Http4xx.as_label(),
+            BinaryDownloadFailure::Http5xx.as_label(),
+            BinaryDownloadFailure::HttpOther.as_label(),
             BinaryDownloadFailure::ReadBody.as_label(),
             BinaryDownloadFailure::NonImageBody.as_label(),
         ];

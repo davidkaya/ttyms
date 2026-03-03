@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Image previews now retry SharePoint-style attachment URLs with download/raw query hints and image-byte sniffing to avoid false "preview unavailable" results for PNG files
+- Image preview download failures now log sanitized HTTP status categories (`http_401`, `http_403`, `http_404`, `http_4xx`, `http_5xx`, `http_other`) for faster troubleshooting
 
 ## [0.1.5] - 2026-02-28
 
